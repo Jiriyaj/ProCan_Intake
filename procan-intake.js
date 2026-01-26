@@ -860,10 +860,11 @@ function update(opts={}){
       : '';
 
       const deepSuffix = (q.deepCleanTotal > 0) ? ' + deep clean' : '';
+
       const dueRule = els.oneTimeOnly.checked
         ? `Due today is <b>one visit</b>${deepSuffix}`
-        : `Due today is <b>${q.termMonths} month(s)</b> prepay${deepSuffix}`;      
-
+        : `Due today is <b>${q.termMonths} month(s)</b> prepay${deepSuffix}`;
+      
     const breakdownHtml = `
       <div><b>Cadence:</b> ${cadenceLabel}</div>
       <div><b>Billing:</b> ${billLabel}</div>
