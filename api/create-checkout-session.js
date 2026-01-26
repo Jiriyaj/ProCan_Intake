@@ -110,19 +110,17 @@ module.exports = async (req, res) => {
           }
         }
       }];
-
-      const addInvoiceItems = [];
-      // One-time deep clean: add as a one-time item on the FIRST invoice (if selected).
+      // One-time deep clean: include as an additional one-time line item on the FIRST invoice (if selected).
       if (deepCleanTotal > 0) {
         const deepCents = Math.round(deepCleanTotal * 100);
         if (deepCents >= minCents) {
-          addInvoiceItems.push({
+          lineItems.push({
+            quantity: 1,
             price_data: {
               currency: 'usd',
               product_data: { name: 'Initial Deep Clean (One-Time)' },
-              unit_amount: deepCents
+              unit_amount: deepCents,
             },
-            quantity: 1
           });
         }
       }
@@ -140,8 +138,7 @@ module.exports = async (req, res) => {
             cadence,
             cans
           },
-          ...(addInvoiceItems.length ? { add_invoice_items: addInvoiceItems } : {})
-        },
+          },
         metadata: {
           orderId,
           bizName: biz,

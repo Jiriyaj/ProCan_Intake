@@ -859,9 +859,10 @@ function update(opts={}){
       ? `Discount code: <b>${escapeHtml(q.discountCode)}</b> (${codePct}% off)`
       : '';
 
-    const dueRule = els.oneTimeOnly.checked
-      ? `Due today is <b>one visit</b> + deep clean`
-      : `Due today is <b>${q.termMonths} month(s)</b> prepay + deep clean`;
+      const deepSuffix = (q.deepCleanTotal > 0) ? ' + deep clean' : '';
+      const dueRule = els.oneTimeOnly.checked
+        ? `Due today is <b>one visit</b>${deepSuffix}`
+        : `Due today is <b>${q.termMonths} month(s)</b> prepay${deepSuffix}`;      
 
     const breakdownHtml = `
       <div><b>Cadence:</b> ${cadenceLabel}</div>
