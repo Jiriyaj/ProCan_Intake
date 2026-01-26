@@ -224,7 +224,7 @@
                 <button class="seg" data-bill="quarterly" type="button">Quarterly (5% off)</button>
                 <button class="seg" data-bill="annual" type="button">Annual (10% off, $1k+/mo)</button>
               </div>
-              <div class="hint">Auto-draft via ACH (preferred) or card.</div>
+              <div class="hint">Auto-draft via card. ACH can be added after onboarding (if offered).</div>
             </div>
 
             <div class="field">
@@ -282,11 +282,14 @@
 
           
           <div class="tos-block">
-            <div class="tos-text">
-              By checking this box, you agree to our
-              <a href="./terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
-              and authorize ProCan Sanitation LLC™ to provide services and process payment as outlined.
-            </div>
+            <div class="tos-text" id="tosText">
+                By checking this box, you agree to our
+                <a href="./terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
+                and authorize ProCan Sanitation LLC™ to provide services.
+                <b>If this is a recurring plan</b>, you also authorize Stripe to automatically charge your payment method
+                according to the selected billing option (monthly / quarterly / annual) until canceled per the Terms.
+                If “one-time clean only” is selected, you authorize a one-time charge only.
+              </div>
             <label class="check check-top tos-check">
               <input type="checkbox" id="agreeTerms" />
               <span>I have read and agree to the Terms &amp; Conditions</span>

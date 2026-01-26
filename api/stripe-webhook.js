@@ -29,17 +29,66 @@ module.exports = async (req, res) => {
   }
 
   try {
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      console.log('✅ Payment completed', {
-        id: session.id,
-        orderId: session.metadata?.orderId,
-        amount_total: session.amount_total,
-        currency: session.currency,
-        customer_email: session.customer_email,
-      });
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        console.log('✅ Checkout completed', {
+          id: session.id,
+          mode: session.mode,
+          orderId: session.metadata?.orderId,
+          customer_email: session.customer_email,
+          subscription: session.subscription,
+          amount_total: session.amount_total,
+          currency: session.currency,
+        });
+        // TODO: persist order + session/subscription IDs, send confirmation email, etc.
+        break;
+      }
 
-      // TODO: mark paid + send emails
+      case 'invoice.paid': {
+        const invoice = event.data.object;
+        console.log('✅ Invoice paid', {
+          id: invoice.id,
+          subscription: invoice.subscription,
+          customer: invoice.customer,
+          amount_paid: invoice.amount_paid,
+          currency: invoice.currency,
+          billing_reason: invoice.billing_reason,
+        });
+        // TODO: mark billing period as paid, release route schedule, etc.
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object;
+        console.log('⚠️ Invoice payment failed', {
+          id: invoice.id,
+          subscription: invoice.subscription,
+          customer: invoice.customer,
+          attempt_count: invoice.attempt_count,
+          next_payment_attempt: invoice.next_payment_attempt,
+        });
+        // TODO: notify customer + internal alert, pause service if needed per policy.
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        console.log('🛑 Subscription canceled', {
+          id: sub.id,
+          customer: sub.customer,
+          status: sub.status,
+          canceled_at: sub.canceled_at,
+          metadata: sub.metadata,
+        });
+        // TODO: mark canceled in your system.
+        break;
+      }
+
+      default:
+        // Keep it quiet for noise, but log type for debugging.
+        console.log('ℹ️ Unhandled event', event.type);
+        break;
     }
 
     return res.status(200).send('ok');
