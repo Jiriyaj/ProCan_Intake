@@ -600,3 +600,13 @@ body.hide-summary .grid{ grid-template-columns: 1fr; }
   background: rgba(255,255,255,.05);
   color: rgba(231,234,237,.82);
 }
+/* Timer lives in the header now, but only shows on Step 3 */
+.card-header #sessionTimer { 
+  display: none; 
+  margin-top: 0; /* prevents header from getting taller */
+}
+
+/* Show only when Step 3 panel is active */
+.form-card:has(.step-panel[data-panel="3"].active) .card-header #sessionTimer {
+  display: flex;
+}
