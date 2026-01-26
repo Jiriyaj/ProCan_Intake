@@ -61,7 +61,7 @@
               <input id="phone" inputmode="tel" placeholder="(###) ###-####" autocomplete="tel" />
             </div>
             <div class="field">
-              <label>Email (for contract + receipt)</label>
+              <label>Email (for receipt + terms)</label>
               <input id="email" inputmode="email" placeholder="billing@business.com" autocomplete="email" />
             </div>
           </div>
@@ -97,14 +97,14 @@
 
           <div class="row two">
             <div class="field">
-              <label># of Locations</label>
+              <label>(#) of Locations</label>
               <input id="locations" type="number" min="1" step="1" value="1" />
               <div class="hint">Multi-location discount auto-applies.</div>
             </div>
             <div class="field">
               <label>Preferred Service Day (Mon–Fri)</label>
               <select id="serviceDay">
-                <option value="unspecified">Unspecified</option>
+                <option value="unspecified">N/A</option>
                 <option>Monday</option>
                 <option>Tuesday</option>
                 <option>Wednesday</option>
@@ -146,9 +146,9 @@
           </div>
 
           <div class="addon">
-            <label class="check">
+            <label class="check check-top">
               <input id="deepClean" type="checkbox" />
-              <span>One-time Initial Deep Clean (recommended)</span>
+              <span>One-time Initial Deep Clean (RECOMMENDED)</span>
             </label>
 
             <div class="row two deep-options">
@@ -171,7 +171,7 @@
 
             <div class="row one deep-options">
               <div class="field">
-                <label># of Cans for Deep Clean</label>
+                <label>(#) of Cans for Deep Clean</label>
                 <input id="deepQty" type="number" min="0" step="1" value="0" disabled />
               </div>
             </div>
@@ -203,11 +203,7 @@
                 <div class="q-label">Estimated Monthly</div>
                 <div class="q-value" id="qMonthly">$0.00</div>
               </div>
-              <div class="quote-kpi">
-                <div class="q-label">Due Today</div>
-                <div class="q-value" id="qDue">$0.00</div>
-              </div>
-              <div class="quote-kpi">
+<div class="quote-kpi">
                 <div class="q-label">Discounts</div>
                 <div class="q-value" id="qDisc">$0.00</div>
               </div>
@@ -234,14 +230,15 @@
             <div class="field">
               <label>Start Date</label>
               <input id="startDate" type="date" />
-              <div class="hint">Used for first service window + contract effective date.</div>
+              <div class="hint">Used for first service window + effective date.</div>
             </div>
           <div class="row two">
             <div class="field">
-              <label>Discount Code (optional)</label>
+              <label>Discount Code</label>
               <div class="inline">
                 <input id="discountCode" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off" />
                 <button class="btn btn-ghost inline-btn" id="applyDiscount" type="button">Apply</button>
+                <button class="btn btn-ghost inline-btn" id="removeDiscount" type="button" hidden>Remove</button>
               </div>
               <div class="hint" id="discountApplied" aria-live="polite"></div>
             </div>
@@ -258,7 +255,7 @@
           <h2></h2>
           <div class="row one">
             <div class="field">
-              <label class="check">
+              <label class="check check-top">
                 <input id="oneTimeOnly" type="checkbox" />
                 <span>Customer wants a one-time clean only (no recurring)</span>
               </label>
@@ -283,15 +280,31 @@
             <pre id="payloadPre"></pre>
           </details>
 
-          <div class="nav two">
+          
+          <div class="tos-block">
+            <div class="tos-text">
+              By checking this box, you agree to our
+              <a href="./terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
+              and authorize ProCan Sanitation LLC™ to provide services and process payment as outlined.
+            </div>
+            <label class="check check-top tos-check">
+              <input type="checkbox" id="agreeTerms" />
+              <span>I have read and agree to the Terms &amp; Conditions</span>
+            </label>
+          </div>
+
+<div class="nav two">
             <button class="btn btn-ghost" id="back3" type="button">← Back</button>
-            <button class="btn btn-primary" id="saveAndContinue" type="button">
-              Save Submission → Contract
+            <button class="btn btn-primary" id="saveAndContinue" type="button" disabled>
+              Confirm
             </button>
           </div>
 
           <div class="tiny">
-            Saves locally for now (device draft). Next phase: generate embedded signer + redirect to payment.
+            <div class="session-timer" id="sessionTimer" aria-live="polite">
+              <span class="session-timer-label">Session resets in</span>
+              <span class="session-timer-value" id="sessionTimerValue">05:00</span>
+            </div>
           </div>
         </div>
       </section>

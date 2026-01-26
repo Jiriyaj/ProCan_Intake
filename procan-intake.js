@@ -100,6 +100,7 @@ const els = {
   // discount
   discountCode: $('discountCode'),
   applyDiscount: $('applyDiscount'),
+  removeDiscount: $('removeDiscount'),
   discountApplied: $('discountApplied'),
 
   // transition
@@ -128,7 +129,11 @@ const els = {
   next2: $('next2'),
   back2: $('back2'),
   back3: $('back3'),
-  saveAndContinue: $('saveAndContinue')
+  saveAndContinue: $('saveAndContinue'),
+  agreeTerms: $('agreeTerms'),
+
+  // final screen timer
+  sessionTimerValue: $('sessionTimerValue')
 };
 
 // ===== UI State =====
@@ -193,6 +198,7 @@ function applyDiscountCode(raw, opts={}){
     uiState.discountCode = '';
     uiState.discountRate = 0;
     if (els.discountApplied) els.discountApplied.textContent = '';
+    if (els.removeDiscount) els.removeDiscount.hidden = true;
     return { ok:true, cleared:true };
   }
   const def = DISCOUNT_CODES[code];
@@ -201,12 +207,14 @@ function applyDiscountCode(raw, opts={}){
     uiState.discountCode = '';
     uiState.discountRate = 0;
     if (els.discountApplied) els.discountApplied.textContent = '';
+    if (els.removeDiscount) els.removeDiscount.hidden = true;
     return { ok:false };
   }
   if (def.type === 'percent'){
     uiState.discountCode = code;
     uiState.discountRate = Math.max(0, Math.min(0.90, Number(def.value || 0)));
     if (els.discountApplied) els.discountApplied.textContent = `Applied: ${def.label || code}`;
+    if (els.removeDiscount) els.removeDiscount.hidden = false;
     return { ok:true };
   }
   if (!opts.silent) alert('Unsupported discount type.');
@@ -241,6 +249,108 @@ function transitionToStep(target, label, cb){
   }, 520);
 }
 
+
+// ===== Final screen session timer =====
+const FINAL_SCREEN_RESET_SECONDS = 5 * 60; // 5 minutes
+let finalTimerInterval = null;
+let finalTimerDeadlineMs = 0;
+
+function formatMMSS(totalSeconds){
+  const s = Math.max(0, Number(totalSeconds || 0));
+  const mm = String(Math.floor(s / 60)).padStart(2,'0');
+  const ss = String(s % 60).padStart(2,'0');
+  return `${mm}:${ss}`;
+}
+
+function renderFinalTimer(secondsLeft){
+  if (!els.sessionTimerValue) return;
+  els.sessionTimerValue.textContent = formatMMSS(secondsLeft);
+}
+
+function stopFinalTimer(){
+  if (finalTimerInterval) window.clearInterval(finalTimerInterval);
+  finalTimerInterval = null;
+  finalTimerDeadlineMs = 0;
+}
+
+function silentResetToDefaults(){
+  // Mirror wipeDraft() behavior without confirm/alert/transition.
+  suspendAutosave = true;
+  autosaveEnabled = false;
+
+  try{
+    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(FINAL_KEY);
+  }catch(e){}
+
+  els.bizName.value = '';
+  els.contactName.value = '';
+  els.phone.value = '';
+  els.email.value = '';
+  els.address.value = '';
+  els.canQty.value = '0';
+  els.locations.value = '1';
+  els.serviceDay.value = 'unspecified';
+  els.padAddon.checked = false;
+  els.padSize.value = 'small';
+  els.padCadence.value = 'weekly';
+  els.deepClean.checked = false;
+  els.deepLevel.value = 'standard';
+  els.deepApplies.value = 'allCans';
+  els.deepQty.value = '0';
+  els.notes.value = '';
+  els.oneTimeOnly.checked = false;
+  if (els.discountCode) els.discountCode.value = '';
+  if (els.discountApplied) els.discountApplied.textContent = '';
+
+  uiState.cadence = 'biweekly';
+  uiState.billing = 'monthly';
+  uiState.hideSummary = true;
+  uiState.step2Confirmed = false;
+  uiState.discountCode = '';
+  uiState.discountRate = 0;
+
+  attemptedNext1 = false;
+  attemptedNext2 = false;
+
+  setCadence(uiState.cadence, { silent:true });
+  setBilling(uiState.billing, { silent:true });
+
+  showErrors(els.errorsStep1, []);
+  showErrors(els.errorsStep2, []);
+  applySummaryVisibility();
+
+  update({ silent:true });
+
+  suspendAutosave = false;
+}
+
+function resetToStep1WithTransition(){
+  stopFinalTimer();
+  transitionToStep(1, 'Session expired — resetting…', () => {
+    silentResetToDefaults();
+    setStep(1, { silent:true });
+    renderFinalTimer(FINAL_SCREEN_RESET_SECONDS);
+  });
+}
+
+function startFinalTimer(){
+  stopFinalTimer();
+  finalTimerDeadlineMs = Date.now() + (FINAL_SCREEN_RESET_SECONDS * 1000);
+
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((finalTimerDeadlineMs - Date.now()) / 1000));
+    renderFinalTimer(left);
+    if (left <= 0){
+      stopFinalTimer();
+      resetToStep1WithTransition();
+    }
+  };
+
+  tick();
+  finalTimerInterval = window.setInterval(tick, 1000);
+}
+
 // ===== Auto-advance (no visible page indicators) =====
 let autoAdvanceTimer = null;
 function scheduleAutoAdvance(){
@@ -248,24 +358,10 @@ function scheduleAutoAdvance(){
   if (!autosaveEnabled) return;
   if (uiState.suppressAutoAdvance) return;
 
+  // Manual navigation only: debounce autosave, never change steps automatically.
   autoAdvanceTimer = window.setTimeout(() => {
-    if (uiState.step === 1){
-      const errs = validateStep1();
-      if (errs.length === 0){
-        attemptedNext1 = false;
-        transitionToStep(2, 'Finalizing submission…', () => setStep(2));
-      }
-    } else if (uiState.step === 2){
-      // Don't auto-advance out of step 2 until you actually interact with it.
-      if (!uiState.step2Confirmed) return;
-      const errs1 = validateStep1();
-      const errs2 = validateStep2();
-      if (errs1.length === 0 && errs2.length === 0){
-        attemptedNext2 = false;
-        transitionToStep(3, 'Generating review…', () => setStep(3));
-      }
-    }
-  }, 600);
+    saveDraft();
+  }, 500);
 }
 
 // ===== Quote computation =====
@@ -327,10 +423,29 @@ function computeQuote(){
   const termMonths = monthsInTerm(billing);
   const trashPerVisit = (trashMonthly > 0 && trashVisitsPerMonth > 0) ? (trashMonthly / trashVisitsPerMonth) : 0;
   const padPerVisit   = (padMonthly > 0 && padVisitsPerMonth > 0) ? (padMonthly / padVisitsPerMonth) : 0;
-  const perVisitTotal = (trashPerVisit + padPerVisit) * (1 - codeDisc);
+  let perVisitTotal = (trashPerVisit + padPerVisit) * (1 - codeDisc);
 
+  // One-time service pricing rule:
+  // - Trash cans: charge the FULL biweekly tier "per-can per month" price as a one-time per-can price.
+  //   (i.e., NOT a per-visit split.)
+  // - Dumpster pad: charge the selected cadence's monthly price as a one-time price (no per-visit split).
   let dueToday = 0;
   if (oneTimeOnly){
+    let trashOneTime = 0;
+    if (canQty > 0 && cadence !== 'none'){
+      const oneTimePerCan = tierPrice(PRICING.trashCan.biweekly, canQty);
+      trashOneTime = oneTimePerCan * canQty;
+    }
+
+    let padOneTime = 0;
+    if (els.padAddon.checked){
+      const sizeKey = els.padSize.value || 'small';
+      const padCadence = els.padCadence.value || 'biweekly';
+      const row = PRICING.dumpsterPad[sizeKey];
+      padOneTime = Number(row?.[padCadence] || 0);
+    }
+
+    perVisitTotal = (trashOneTime + padOneTime) * (1 - codeDisc);
     dueToday = perVisitTotal + deepCleanTotal;
   } else {
     dueToday = (monthlyTotal * termMonths) + deepCleanTotal;
@@ -630,6 +745,15 @@ function applySummaryVisibility(){
   document.body.classList.toggle('hide-summary', shouldHide);
 }
 
+function updateConfirmGate(){
+  if (!els.saveAndContinue) return;
+  if (uiState.step !== 3) return;
+  const ok = !!(els.agreeTerms && els.agreeTerms.checked);
+  els.saveAndContinue.disabled = !ok;
+  els.saveAndContinue.classList.toggle('ready', ok);
+}
+
+
 // ===== Steps =====
 function setCadence(c, opts={}){
   uiState.cadence = c;
@@ -655,8 +779,13 @@ function setStep(n, opts={}){
   // Final review always shows the summary (without changing your toggle state).
 applySummaryVisibility();
 
+  // Final screen timer: runs only while on Step 3
+  if (n === 3) startFinalTimer();
+  else { stopFinalTimer(); renderFinalTimer(FINAL_SCREEN_RESET_SECONDS); }
+
   if (!opts.silent) saveDraft();
   update({ silent: opts.silent });
+  updateConfirmGate();
   scheduleAutoAdvance();
 }
 
@@ -689,7 +818,7 @@ function update(opts={}){
     els.breakdown.innerHTML = `<b>Issue:</b> ${escapeHtml(q.error || 'Invalid inputs')}`;
 
     els.qMonthly.textContent = money(0);
-    els.qDue.textContent = money(0);
+    if (els.qDue) els.qDue.textContent = money(0);
     els.qDisc.textContent = money(0);
     els.embeddedBreakdown.innerHTML = `<b>Issue:</b> ${escapeHtml(q.error || 'Invalid inputs')}`;
   } else {
@@ -701,7 +830,7 @@ function update(opts={}){
     els.kpiDiscounts.textContent = money(q.discountTotal);
 
     els.qMonthly.textContent = money(q.monthlyTotal);
-    els.qDue.textContent = money(q.dueToday);
+    if (els.qDue) els.qDue.textContent = money(q.dueToday);
     els.qDisc.textContent = money(q.discountTotal);
 
     const cadenceLabel = q.cadence === 'biweekly' ? 'Biweekly' : (q.cadence === 'monthly' ? 'Monthly' : 'None');
@@ -851,7 +980,7 @@ async function startStripeCheckout(submission){
   } finally {
     if (btn){
       btn.disabled = false;
-      btn.textContent = oldText || 'Save Submission → Contract';
+      btn.textContent = oldText || 'Confirm';
     }
   }
 }
@@ -911,6 +1040,15 @@ function bind(){
       update();
       saveDraft();
 });
+    if (els.removeDiscount){
+      els.removeDiscount.addEventListener('click', () => {
+        setAutosaveEnabled();
+        if (els.discountCode) els.discountCode.value = '';
+        applyDiscountCode('');
+        update();
+        saveDraft();
+      });
+    }
     els.discountCode.addEventListener('keydown', (e) => {
       if (e.key === 'Enter'){ e.preventDefault(); els.applyDiscount.click(); }
     });
@@ -931,6 +1069,10 @@ els.next1.addEventListener('click', () => {
   els.back3.addEventListener('click', () => transitionToStep(2, 'Returning…', () => setStep(2)));
 
   els.saveAndContinue.addEventListener('click', () => {
+    if (!els.agreeTerms || !els.agreeTerms.checked){
+      alert('Please agree to the Terms & Conditions to continue.');
+      return;
+    }
     const q = computeQuote();
     if (!q.ok) return alert(q.error || 'Fix inputs.');
     attemptedNext1 = true;
@@ -947,6 +1089,12 @@ els.next1.addEventListener('click', () => {
     startStripeCheckout(payload).catch((err)=>{ alert(err && err.message ? err.message : 'Payment checkout failed.'); });
 
   });
+
+  if (els.agreeTerms){
+    els.agreeTerms.addEventListener('change', () => {
+      updateConfirmGate();
+    });
+  }
 }
 
 function init(){

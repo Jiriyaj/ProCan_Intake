@@ -230,6 +230,24 @@ input:focus, select:focus, textarea:focus{
   color:#0F1418;
   box-shadow: 0 10px 30px rgba(0,0,0,.35);
 }
+
+/* Confirm gating (Terms checkbox) */
+#saveAndContinue:disabled{
+  background: rgba(255,255,255,.06);
+  color: rgba(231,234,237,.45);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: .65;
+}
+#saveAndContinue.ready{
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(201,208,214,.92));
+  color:#0F1418;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.22),
+    0 0 28px rgba(255,255,255,.30),
+    0 18px 55px rgba(0,0,0,0.55);
+}
 .btn-ghost{
   background: rgba(255,255,255,.06);
   border:1px solid var(--border);
@@ -533,4 +551,52 @@ body.hide-summary .grid{ grid-template-columns: 1fr; }
     height: calc(130px + env(safe-area-inset-bottom));
     grid-column: 1 / -1;
   }
+}
+
+
+/* ---- Small alignment helpers ---- */
+.check-top{ align-items:flex-start; }
+.check-top input{ margin-top:4px; }
+
+/* ---- Terms gate on final step ---- */
+.tos-block{
+  margin-top:16px;
+  padding:14px 14px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:14px;
+  background: rgba(255,255,255,.03);
+}
+.tos-text{
+  font-size:13px;
+  line-height:1.45;
+  color: rgba(231,234,237,.78);
+  margin-bottom:10px;
+}
+.tos-text a{ color: rgba(169,215,255,.95); text-decoration: underline; }
+.tos-check{ font-weight:800; }
+
+
+
+/* ---- Final step session timer (discreet) ---- */
+.session-timer{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(231,234,237,.55);
+}
+.session-timer-value{
+  font-variant-numeric: tabular-nums;
+  font-weight: 1000;
+  letter-spacing: .10em;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.05);
+  color: rgba(231,234,237,.82);
 }
