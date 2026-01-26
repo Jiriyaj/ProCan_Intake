@@ -21,6 +21,52 @@ function num(v, fallback=0){
   return Number.isFinite(n) ? n : fallback;
 }
 
+function metaStr(v, maxLen=450){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  return s.length > maxLen ? (s.slice(0, maxLen - 1) + '…') : s;
+}
+function buildSessionMetadata(submission, origin, computed){
+  const b = submission?.business || {};
+  const s = submission?.services || {};
+  const p = submission?.pricing || {};
+  const bill = submission?.billing || {};
+  const termsUrl = `${origin}/terms.html?return=${encodeURIComponent('/procan-intake.html')}`;
+  return {
+    orderId: metaStr(submission?.meta?.id, 120) || 'unknown',
+    bizName: metaStr(b.name, 200),
+    contactName: metaStr(b.contactName, 200),
+    customerEmail: metaStr(b.email, 200),
+    phone: metaStr(b.phone, 80),
+    address: metaStr(b.address, 300),
+    locations: metaStr(b.locations, 40),
+    preferredServiceDay: metaStr(b.preferredServiceDay, 40),
+    startDate: metaStr(bill.startDate, 40),
+    notes: metaStr(submission?.notes, 240),
+
+    billing_type: computed.billing_type,
+    billing: metaStr(computed.billing, 40),
+    termMonths: metaStr(computed.termMonths, 10),
+    cadence: metaStr(computed.cadence, 40),
+    cans: metaStr(computed.cans, 40),
+
+    padEnabled: metaStr(!!s?.pad?.enabled, 10),
+    padSize: metaStr(s?.pad?.size, 40),
+    padCadence: metaStr(s?.pad?.cadence, 40),
+
+    deepCleanEnabled: metaStr(!!s?.deepClean?.enabled, 10),
+    deepCleanLevel: metaStr(s?.deepClean?.level, 40),
+    deepCleanQty: metaStr(s?.deepClean?.qty, 40),
+    deepCleanTotal: metaStr(num(s?.deepClean?.total, 0), 40),
+
+    discountCode: metaStr(p.discountCode, 80),
+    monthlyTotal: metaStr(num(p.monthlyTotal, 0), 40),
+    dueToday: metaStr(num(p.dueToday, 0), 40),
+
+    termsUrl
+  };
+}
+
 module.exports = async (req, res) => {
   try {
     if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
@@ -29,131 +75,114 @@ module.exports = async (req, res) => {
     const { submission } = req.body || {};
 
     if (!submission || !submission.pricing) {
-      return res.status(400).send('Missing submission/pricing');
+      return res.status(400).json({ error: 'Missing submission payload.' });
     }
 
-    const origin = (req.headers && req.headers.origin) || `https://${req.headers.host}`;
-
-    const orderId = safeStr(submission?.meta?.id, 'unknown');
     const biz = safeStr(submission?.business?.name, 'ProCan Client');
-    const email = safeStr(submission?.business?.email, '') || undefined;
+    const email = safeStr(submission?.business?.email, '');
+    const orderId = safeStr(submission?.meta?.id, '');
+    const cadence = safeStr(submission?.services?.trash?.cadence, 'biweekly');
+    const cans = num(submission?.services?.trash?.cans, 0);
 
-    const billing = safeStr(submission?.billing?.option || submission?.pricing?.billing || 'monthly'); // monthly|quarterly|annual
-    const termMonths = Math.max(1, Math.round(num(submission?.billing?.monthsInTerm, billing === 'quarterly' ? 3 : (billing === 'annual' ? 12 : 1))));
+    const billing = safeStr(submission?.billing?.option, 'monthly'); // monthly | quarterly | annual
+    const termMonths = num(submission?.billing?.monthsInTerm, 1);
+
+    const monthlyTotal = num(submission?.pricing?.monthlyTotal, 0);
+    const dueToday = num(submission?.pricing?.dueToday, 0);
 
     const oneTimeOnly = !!submission?.billing?.oneTimeOnly;
 
-    // Values are in dollars in the submission payload
-    const monthlyTotal = num(submission?.pricing?.monthlyTotal, 0);
-    const dueToday = num(submission?.pricing?.dueToday, 0);
-    const deepCleanTotal = num(submission?.services?.deepClean?.total, 0);
+    if (!oneTimeOnly && monthlyTotal <= 0) {
+      return res.status(400).json({ error: 'Invalid monthly total.' });
+    }
+    if (dueToday <= 0) {
+      return res.status(400).json({ error: 'Invalid due today total.' });
+    }
 
-    // For subscriptions, the recurring charge is the total for the selected billing interval.
-    // Example: quarterly => monthlyTotal * 3 (discounts already baked into monthlyTotal).
-    const recurringIntervalTotal = Math.max(0, monthlyTotal * termMonths);
-    const recurringAmountCents = Math.round(recurringIntervalTotal * 100);
+    // Derive origin for redirects and terms link
+    const origin = (req.headers && req.headers.origin) || `https://${req.headers.host}`;
 
-    // For one-time only, charge dueToday as a one-time payment.
-    const oneTimeAmountCents = Math.round(Math.max(0, dueToday) * 100);
-
-    const cadence = safeStr(submission?.services?.trash?.cadence, '');
-    const cans = safeStr(submission?.services?.trash?.cans, '');
     const serviceLabel = `ProCan Service — ${biz}`;
 
-    // Stripe minimums vary by currency/method; keep a conservative floor for card.
-    const minCents = 50;
+    const computed = {
+      billing_type: oneTimeOnly ? 'one_time' : 'subscription',
+      billing,
+      termMonths,
+      cadence,
+      cans
+    };
+    const sessionMetadata = buildSessionMetadata(submission, origin, computed);
 
-    let session;
-    if (oneTimeOnly) {
-      if (oneTimeAmountCents < minCents) return res.status(400).send('Amount too small');
+    // Stripe expects integer cents
+    const dueTodayCents = Math.round(dueToday * 100);
 
-      session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        customer_email: email,
-        line_items: [{
-          quantity: 1,
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'ProCan One-Time Service',
-              description: `${biz}${cadence ? ` • ${cadence}` : ''}${cans ? ` • ${cans} cans` : ''}`
-            },
-            unit_amount: oneTimeAmountCents,
-          },
-        }],
-        metadata: {
-          orderId,
-          bizName: biz,
-          billing_type: 'one_time',
-          billing,
-          cadence,
-          cans
-        },
-        success_url: `${origin}/procan-intake.html?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/procan-intake.html?payment=cancelled`,
-      });
-    } else {
-      if (recurringAmountCents < minCents) return res.status(400).send('Recurring amount too small');
-
-      const lineItems = [{
-        quantity: 1,
+    const lineItems = [
+      {
         price_data: {
           currency: 'usd',
           product_data: {
-            name: 'ProCan Sanitation Service (Recurring)',
-            description: `${biz}${cadence ? ` • ${cadence}` : ''}${cans ? ` • ${cans} cans` : ''}`
+            name: serviceLabel,
+            description: oneTimeOnly
+              ? `One-time service. Trash cadence: ${cadence}, cans: ${cans}`
+              : `Recurring service. Billing: ${billing} (${termMonths} mo). Trash cadence: ${cadence}, cans: ${cans}`,
           },
-          unit_amount: recurringAmountCents,
-          recurring: {
-            interval: 'month',
-            interval_count: termMonths
-          }
-        }
-      }];
-      // One-time deep clean: include as an additional one-time line item on the FIRST invoice (if selected).
-      if (deepCleanTotal > 0) {
-        const deepCents = Math.round(deepCleanTotal * 100);
-        if (deepCents >= minCents) {
-          lineItems.push({
-            quantity: 1,
-            price_data: {
-              currency: 'usd',
-              product_data: { name: 'Initial Deep Clean (One-Time)' },
-              unit_amount: deepCents,
-            },
-          });
-        }
-      }
+          unit_amount: dueTodayCents,
+          ...(oneTimeOnly
+            ? {}
+            : {
+                recurring: {
+                  interval: 'month',
+                  interval_count: termMonths,
+                },
+              }),
+        },
+        quantity: 1,
+      },
+    ];
 
+    // Success/cancel redirect (your intake form can read these params if you want)
+    const successUrl = `${origin}/procan-intake.html?paid=1&oid=${encodeURIComponent(orderId)}`;
+    const cancelUrl = `${origin}/procan-intake.html?canceled=1`;
+
+    let session;
+
+    if (oneTimeOnly) {
+      // One-time payment checkout
+      session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        payment_method_types: ['card'],
+        customer_email: email || undefined,
+        line_items: lineItems.map(li => ({
+          ...li,
+          price_data: {
+            ...li.price_data,
+            // remove recurring if any
+            recurring: undefined,
+          },
+        })),
+        metadata: sessionMetadata,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      });
+    } else {
+      // Subscription checkout
       session = await stripe.checkout.sessions.create({
         mode: 'subscription',
-        customer_email: email,
+        payment_method_types: ['card'],
+        customer_email: email || undefined,
         line_items: lineItems,
         subscription_data: {
-          metadata: {
-            orderId,
-            bizName: biz,
-            billing_type: 'subscription',
-            billing,
-            cadence,
-            cans
-          },
-          },
-        metadata: {
-          orderId,
-          bizName: biz,
-          billing_type: 'subscription',
-          billing,
-          cadence,
-          cans
+          metadata: sessionMetadata,
         },
-        success_url: `${origin}/procan-intake.html?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/procan-intake.html?payment=cancelled`,
+        metadata: sessionMetadata,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
       });
     }
 
-    return res.status(200).json({ url: session.url, sessionId: session.id });
+    return res.status(200).json({ url: session.url });
   } catch (err) {
-    return res.status(500).send(err?.message || 'Server error');
+    console.error('create-checkout-session error:', err);
+    return res.status(500).json({ error: err?.message || 'Server error' });
   }
 };

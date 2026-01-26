@@ -2,6 +2,9 @@
 // ENV required in Vercel project:
 //   STRIPE_SECRET_KEY=sk_test_... (or sk_live_...)
 //   STRIPE_WEBHOOK_SECRET=whsec_...
+//   RESEND_API_KEY=re_...
+//   OWNER_EMAIL=your@email.com            (where you want internal notifications)
+//   FROM_EMAIL="ProCan Sanitation <no-reply@yourdomain.com>"   (must be verified in Resend)
 //
 // Install dependency via package.json: "stripe"
 const Stripe = require('stripe');
@@ -13,6 +16,175 @@ async function buffer(req) {
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+function moneyFromCents(cents){
+  const n = Number(cents || 0) / 100;
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+function safe(v, max=500){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  return s.length > max ? (s.slice(0, max - 1) + '…') : s;
+}
+
+async function sendResendEmail({ to, subject, html, text, replyTo, idempotencyKey }){
+  const key = process.env.RESEND_API_KEY;
+  const from = process.env.FROM_EMAIL;
+  if (!key) throw new Error('Missing RESEND_API_KEY');
+  if (!from) throw new Error('Missing FROM_EMAIL');
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {})
+    },
+    body: JSON.stringify({
+      from,
+      to,
+      subject,
+      html,
+      text,
+      ...(replyTo ? { reply_to: replyTo } : {})
+    })
+  });
+
+  if (!res.ok){
+    const t = await res.text().catch(() => '');
+    throw new Error(`Resend error (${res.status}): ${t || 'Failed to send email'}`);
+  }
+  return res.json().catch(() => ({}));
+}
+
+function renderCustomerEmail({ m, session }){
+  const termsUrl = m.termsUrl || '';
+  const dash = (v) => (v ? v : '—');
+
+  const line1 = `${dash(m.bizName)} — Order confirmed`;
+  const plan = m.billing_type === 'one_time'
+    ? `One-time service`
+    : `Recurring (${dash(m.billing)} billing)`;
+
+  const serviceLines = [
+    `Trash cadence: ${dash(m.cadence)} • Cans: ${dash(m.cans)}`,
+    `Dumpster pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
+    `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)})` : 'No'}`
+  ];
+
+  const amountLine = m.billing_type === 'one_time'
+    ? `Paid today: ${dash(moneyFromCents(session.amount_total))}`
+    : `Paid today: ${dash(moneyFromCents(session.amount_total))} (first billing)`;
+
+  const html = `
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;">
+      <h2 style="margin:0 0 8px 0;">${line1}</h2>
+      <p style="margin:0 0 14px 0;color:#444;">
+        Thanks — we received your payment and will follow up to confirm routing details.
+      </p>
+
+      <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;">
+        <div style="font-weight:600;margin-bottom:6px;">Summary</div>
+        <div>${plan}</div>
+        <div>${amountLine}</div>
+        <div>Service address: ${dash(m.address)}</div>
+        <div>Preferred service day: ${dash(m.preferredServiceDay)}</div>
+        <div>Start date: ${dash(m.startDate)}</div>
+        <div style="margin-top:8px;">${serviceLines.map(x=>`<div>${x}</div>`).join('')}</div>
+      </div>
+
+      ${termsUrl ? `
+        <p style="margin:14px 0 0 0;">
+          Terms & Conditions: <a href="${termsUrl}">${termsUrl}</a>
+        </p>` : ''}
+
+      <p style="margin:14px 0 0 0;color:#444;">
+        If anything needs to change (gate code, access window, bin location), just reply to this email.
+      </p>
+
+      <p style="margin:14px 0 0 0;color:#6b7280;font-size:12px;">
+        Order ID: ${dash(m.orderId)}
+      </p>
+    </div>
+  `.trim();
+
+  const text = [
+    line1,
+    '',
+    'Thanks — we received your payment and will follow up to confirm routing details.',
+    '',
+    'Summary',
+    `Plan: ${plan}`,
+    amountLine,
+    `Service address: ${dash(m.address)}`,
+    `Preferred service day: ${dash(m.preferredServiceDay)}`,
+    `Start date: ${dash(m.startDate)}`,
+    ...serviceLines,
+    '',
+    termsUrl ? `Terms & Conditions: ${termsUrl}` : '',
+    '',
+    'Reply to this email if anything needs to change (gate code, access window, bin location).',
+    '',
+    `Order ID: ${dash(m.orderId)}`
+  ].filter(Boolean).join('\n');
+
+  return { html, text };
+}
+
+function renderOwnerEmail({ m, session }){
+  const dash = (v) => (v ? v : '—');
+
+  const html = `
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;">
+      <h2 style="margin:0 0 8px 0;">✅ New paid order</h2>
+      <p style="margin:0 0 14px 0;color:#444;">Order ID: <b>${dash(m.orderId)}</b></p>
+
+      <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;">
+        <div><b>Business:</b> ${dash(m.bizName)}</div>
+        <div><b>Contact:</b> ${dash(m.contactName)}</div>
+        <div><b>Email:</b> ${dash(m.customerEmail || session.customer_email)}</div>
+        <div><b>Phone:</b> ${dash(m.phone)}</div>
+        <div><b>Address:</b> ${dash(m.address)}</div>
+        <div><b>Locations:</b> ${dash(m.locations)}</div>
+        <div><b>Preferred day:</b> ${dash(m.preferredServiceDay)}</div>
+        <div><b>Start date:</b> ${dash(m.startDate)}</div>
+        <div style="margin-top:10px;"><b>Plan:</b> ${m.billing_type === 'one_time' ? 'One-time' : `Recurring (${dash(m.billing)})`}</div>
+        <div><b>Paid today:</b> ${moneyFromCents(session.amount_total)}</div>
+        <div style="margin-top:10px;"><b>Services</b></div>
+        <div>Trash: ${dash(m.cadence)} • ${dash(m.cans)} cans</div>
+        <div>Pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}</div>
+        <div>Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}</div>
+        <div style="margin-top:10px;"><b>Notes:</b> ${dash(m.notes)}</div>
+      </div>
+    </div>
+  `.trim();
+
+  const text = [
+    'New paid order',
+    `Order ID: ${dash(m.orderId)}`,
+    '',
+    `Business: ${dash(m.bizName)}`,
+    `Contact: ${dash(m.contactName)}`,
+    `Email: ${dash(m.customerEmail || session.customer_email)}`,
+    `Phone: ${dash(m.phone)}`,
+    `Address: ${dash(m.address)}`,
+    `Locations: ${dash(m.locations)}`,
+    `Preferred day: ${dash(m.preferredServiceDay)}`,
+    `Start date: ${dash(m.startDate)}`,
+    '',
+    `Plan: ${m.billing_type === 'one_time' ? 'One-time' : `Recurring (${dash(m.billing)})`}`,
+    `Paid today: ${moneyFromCents(session.amount_total)}`,
+    '',
+    `Trash: ${dash(m.cadence)} • ${dash(m.cans)} cans`,
+    `Pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
+    `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}`,
+    '',
+    `Notes: ${dash(m.notes)}`
+  ].join('\n');
+
+  return { html, text };
 }
 
 module.exports = async (req, res) => {
@@ -32,16 +204,61 @@ module.exports = async (req, res) => {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        console.log('✅ Checkout completed', {
+
+        // For safety: only email when payment is actually paid.
+        if (session.payment_status && session.payment_status !== 'paid'){
+          console.log('ℹ️ Checkout completed but not paid yet (skipping email)', {
+            id: session.id,
+            payment_status: session.payment_status,
+            mode: session.mode
+          });
+          break;
+        }
+
+        const m = session.metadata || {};
+        const ownerEmail = process.env.OWNER_EMAIL;
+
+        const customerEmail = safe(session.customer_details?.email || session.customer_email || m.customerEmail, 200);
+        if (!customerEmail){
+          console.warn('⚠️ Missing customer email; cannot send customer receipt', { id: session.id });
+        }
+
+        console.log('✅ Checkout paid; sending emails', {
           id: session.id,
+          orderId: m.orderId,
+          customerEmail,
           mode: session.mode,
-          orderId: session.metadata?.orderId,
-          customer_email: session.customer_email,
-          subscription: session.subscription,
-          amount_total: session.amount_total,
-          currency: session.currency,
+          amount_total: session.amount_total
         });
-        // TODO: persist order + session/subscription IDs, send confirmation email, etc.
+
+        // Customer email
+        if (customerEmail){
+          const c = renderCustomerEmail({ m, session });
+          await sendResendEmail({
+            to: customerEmail,
+            subject: `ProCan — Order confirmed${m.orderId ? ` (#${m.orderId})` : ''}`,
+            html: c.html,
+            text: c.text,
+            replyTo: ownerEmail || undefined,
+            idempotencyKey: `procan_${session.id}_customer`
+          });
+        }
+
+        // Owner email
+        if (ownerEmail){
+          const o = renderOwnerEmail({ m, session });
+          await sendResendEmail({
+            to: ownerEmail,
+            subject: `ProCan — New paid order${m.orderId ? ` (#${m.orderId})` : ''}`,
+            html: o.html,
+            text: o.text,
+            replyTo: customerEmail || undefined,
+            idempotencyKey: `procan_${session.id}_owner`
+          });
+        } else {
+          console.warn('⚠️ Missing OWNER_EMAIL; skipping internal notification');
+        }
+
         break;
       }
 
@@ -55,7 +272,7 @@ module.exports = async (req, res) => {
           currency: invoice.currency,
           billing_reason: invoice.billing_reason,
         });
-        // TODO: mark billing period as paid, release route schedule, etc.
+        // Optional: send recurring-payment receipts here if you want later.
         break;
       }
 
@@ -68,7 +285,6 @@ module.exports = async (req, res) => {
           attempt_count: invoice.attempt_count,
           next_payment_attempt: invoice.next_payment_attempt,
         });
-        // TODO: notify customer + internal alert, pause service if needed per policy.
         break;
       }
 
@@ -76,26 +292,20 @@ module.exports = async (req, res) => {
         const sub = event.data.object;
         console.log('🛑 Subscription canceled', {
           id: sub.id,
-          customer: sub.customer,
           status: sub.status,
           canceled_at: sub.canceled_at,
-          metadata: sub.metadata,
         });
-        // TODO: mark canceled in your system.
         break;
       }
 
       default:
-        // Keep it quiet for noise, but log type for debugging.
-        console.log('ℹ️ Unhandled event', event.type);
+        // Ignore other events
         break;
     }
 
-    return res.status(200).send('ok');
+    return res.status(200).json({ received: true });
   } catch (err) {
-    return res.status(500).send(err?.message || 'Webhook handler failed');
+    console.error('Webhook handler error:', err);
+    return res.status(500).send(err?.message || 'Server error');
   }
 };
-
-// Disable body parsing so we can read raw body for signature verification
-module.exports.config = { api: { bodyParser: false } };
