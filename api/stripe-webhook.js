@@ -4,7 +4,7 @@
 //   STRIPE_WEBHOOK_SECRET=whsec_...
 //   RESEND_API_KEY=re_...
 //   OWNER_EMAIL=your@email.com
-//   FROM_EMAIL="ProCan Sanitation <onboarding@resend.dev>"  // ok without your own domain
+//   FROM_EMAIL="ProCan Sanitation <onboarding@resend.dev>"  // ok without your own domain (testing mode restricts recipients)
 //
 // Install dependency via package.json: "stripe"
 const Stripe = require('stripe');
@@ -73,8 +73,16 @@ function renderCustomerEmail({ m, session }) {
 
   const serviceLines = [
     `Trash cadence: ${dash(m.cadence)} • Cans: ${dash(m.cans)}`,
-    `Dumpster pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
-    `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)})` : 'No'}`,
+    `Dumpster pad: ${
+      m.padEnabled === 'true'
+        ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})`
+        : 'No'
+    }`,
+    `Deep clean: ${
+      m.deepCleanEnabled === 'true'
+        ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)})`
+        : 'No'
+    }`,
   ];
 
   const amountLine =
@@ -99,10 +107,11 @@ function renderCustomerEmail({ m, session }) {
         <div style="margin-top:8px;">${serviceLines.map(x => `<div>${x}</div>`).join('')}</div>
       </div>
 
-      ${termsUrl ? `
-        <p style="margin:14px 0 0 0;">
-          Terms & Conditions: <a href="${termsUrl}">${termsUrl}</a>
-        </p>` : ''}
+      ${
+        termsUrl
+          ? `<p style="margin:14px 0 0 0;">Terms & Conditions: <a href="${termsUrl}">${termsUrl}</a></p>`
+          : ''
+      }
 
       <p style="margin:14px 0 0 0;color:#444;">
         If anything needs to change (gate code, access window, bin location), just reply to this email.
@@ -129,8 +138,6 @@ function renderCustomerEmail({ m, session }) {
     '',
     termsUrl ? `Terms & Conditions: ${termsUrl}` : '',
     '',
-    'Reply to this email if anything needs to change (gate code, access window, bin location).',
-    '',
     `Order ID: ${dash(m.orderId)}`,
   ].filter(Boolean).join('\n');
 
@@ -154,13 +161,26 @@ function renderOwnerEmail({ m, session }) {
         <div><b>Locations:</b> ${dash(m.locations)}</div>
         <div><b>Preferred day:</b> ${dash(m.preferredServiceDay)}</div>
         <div><b>Start date:</b> ${dash(m.startDate)}</div>
-        <div style="margin-top:10px;"><b>Plan:</b> ${m.billing_type === 'one_time' ? 'One-time' : `Recurring (${dash(m.billing)})`}</div>
+        <div style="margin-top:10px;"><b>Plan:</b> ${
+          m.billing_type === 'one_time' ? 'One-time' : `Recurring (${dash(m.billing)})`
+        }</div>
         <div><b>Paid today:</b> ${moneyFromCents(session.amount_total)}</div>
         <div style="margin-top:10px;"><b>Services</b></div>
         <div>Trash: ${dash(m.cadence)} • ${dash(m.cans)} cans</div>
-        <div>Pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}</div>
-        <div>Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}</div>
+        <div>Pad: ${
+          m.padEnabled === 'true'
+            ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})`
+            : 'No'
+        }</div>
+        <div>Deep clean: ${
+          m.deepCleanEnabled === 'true'
+            ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})`
+            : 'No'
+        }</div>
         <div style="margin-top:10px;"><b>Notes:</b> ${dash(m.notes)}</div>
+        <div style="margin-top:10px;"><b>Terms link:</b> ${
+          m.termsUrl ? `<a href="${m.termsUrl}">${m.termsUrl}</a>` : '—'
+        }</div>
       </div>
     </div>
   `.trim();
@@ -186,7 +206,9 @@ function renderOwnerEmail({ m, session }) {
     `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}`,
     '',
     `Notes: ${dash(m.notes)}`,
-  ].join('\n');
+    '',
+    m.termsUrl ? `Terms link: ${m.termsUrl}` : '',
+  ].filter(Boolean).join('\n');
 
   return { html, text };
 }
@@ -205,40 +227,39 @@ module.exports = async (req, res) => {
   }
 
   try {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
 
-        // Only email when payment is actually paid.
-        if (session.payment_status && session.payment_status !== 'paid') {
-          console.log('ℹ️ Checkout completed but not paid yet (skipping email)', {
-            id: session.id,
-            payment_status: session.payment_status,
-            mode: session.mode,
-          });
-          break;
-        }
-
-        const m = session.metadata || {};
-        const ownerEmail = process.env.OWNER_EMAIL;
-
-        const customerEmail = safe(
-          session.customer_details?.email || session.customer_email || m.customerEmail,
-          200
-        );
-
-        console.log('✅ Checkout paid; sending emails', {
+      // Only email when payment is actually paid.
+      if (session.payment_status && session.payment_status !== 'paid') {
+        console.log('ℹ️ Checkout completed but not paid yet (skipping email)', {
           id: session.id,
-          orderId: m.orderId,
-          customerEmail,
-          ownerEmail,
+          payment_status: session.payment_status,
           mode: session.mode,
-          amount_total: session.amount_total,
-          termsUrl: m.termsUrl,
         });
+        return res.status(200).send('ok');
+      }
 
-        // Customer email
-        if (customerEmail) {
+      const m = session.metadata || {};
+      const ownerEmail = process.env.OWNER_EMAIL;
+      const customerEmail = safe(
+        session.customer_details?.email || session.customer_email || m.customerEmail,
+        200
+      );
+
+      console.log('✅ Checkout paid; attempting customer email then owner email', {
+        id: session.id,
+        orderId: m.orderId,
+        customerEmail,
+        ownerEmail,
+        mode: session.mode,
+        amount_total: session.amount_total,
+        termsUrl: m.termsUrl,
+      });
+
+      // 1) Customer FIRST (your preference)
+      if (customerEmail) {
+        try {
           const c = renderCustomerEmail({ m, session });
           await sendResendEmail({
             to: customerEmail,
@@ -248,34 +269,33 @@ module.exports = async (req, res) => {
             replyTo: ownerEmail || undefined,
             idempotencyKey: `procan_${session.id}_customer`,
           });
-        } else {
-          console.warn('⚠️ Missing customer email; cannot send customer receipt', { id: session.id });
-        }
-
-        // Owner email
-        if (ownerEmail) {
-          const o = renderOwnerEmail({ m, session });
-          await sendResendEmail({
-            to: ownerEmail,
-            subject: `ProCan — New paid order${m.orderId ? ` (#${m.orderId})` : ''}`,
-            html: o.html,
-            text: o.text,
-            replyTo: customerEmail || undefined,
-            idempotencyKey: `procan_${session.id}_owner`,
+          console.log('✅ Customer email sent', { customerEmail });
+        } catch (e) {
+          // This is your exact blocker: Resend testing mode (403).
+          console.warn('⚠️ Customer email failed (Resend restriction likely). Continuing to owner email.', {
+            customerEmail,
+            error: e?.message || String(e),
           });
-        } else {
-          console.warn('⚠️ Missing OWNER_EMAIL; skipping internal notification');
         }
-
-        break;
+      } else {
+        console.warn('⚠️ Missing customer email; cannot send customer email', { id: session.id });
       }
 
-      // Keep these quiet (no emails) — optional hooks for later
-      case 'invoice.paid':
-      case 'invoice.payment_failed':
-      case 'customer.subscription.deleted':
-      default:
-        break;
+      // 2) Owner second (will now run even if customer send failed)
+      if (ownerEmail) {
+        const o = renderOwnerEmail({ m, session });
+        await sendResendEmail({
+          to: ownerEmail,
+          subject: `ProCan — New paid order${m.orderId ? ` (#${m.orderId})` : ''}`,
+          html: o.html,
+          text: o.text,
+          replyTo: ownerEmail,
+          idempotencyKey: `procan_${session.id}_owner`,
+        });
+        console.log('✅ Owner email sent', { ownerEmail });
+      } else {
+        console.warn('⚠️ Missing OWNER_EMAIL; skipping internal notification');
+      }
     }
 
     return res.status(200).send('ok');
