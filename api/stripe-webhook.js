@@ -3,8 +3,8 @@
 //   STRIPE_SECRET_KEY=sk_test_... (or sk_live_...)
 //   STRIPE_WEBHOOK_SECRET=whsec_...
 //   RESEND_API_KEY=re_...
-//   OWNER_EMAIL=your@email.com            (where you want internal notifications)
-//   FROM_EMAIL="ProCan Sanitation <no-reply@yourdomain.com>"   (must be verified in Resend)
+//   OWNER_EMAIL=your@email.com
+//   FROM_EMAIL="ProCan Sanitation <onboarding@resend.dev>"  // ok without your own domain
 //
 // Install dependency via package.json: "stripe"
 const Stripe = require('stripe');
@@ -18,29 +18,30 @@ async function buffer(req) {
   });
 }
 
-function moneyFromCents(cents){
+function moneyFromCents(cents) {
   const n = Number(cents || 0) / 100;
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-function safe(v, max=500){
+function safe(v, max = 500) {
   const s = String(v ?? '').trim();
   if (!s) return '';
-  return s.length > max ? (s.slice(0, max - 1) + '…') : s;
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
-async function sendResendEmail({ to, subject, html, text, replyTo, idempotencyKey }){
+async function sendResendEmail({ to, subject, html, text, replyTo, idempotencyKey }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.FROM_EMAIL;
+
   if (!key) throw new Error('Missing RESEND_API_KEY');
   if (!from) throw new Error('Missing FROM_EMAIL');
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${key}`,
+      Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
-      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {})
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from,
@@ -48,35 +49,38 @@ async function sendResendEmail({ to, subject, html, text, replyTo, idempotencyKe
       subject,
       html,
       text,
-      ...(replyTo ? { reply_to: replyTo } : {})
-    })
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    }),
   });
 
-  if (!res.ok){
+  if (!res.ok) {
     const t = await res.text().catch(() => '');
     throw new Error(`Resend error (${res.status}): ${t || 'Failed to send email'}`);
   }
+
   return res.json().catch(() => ({}));
 }
 
-function renderCustomerEmail({ m, session }){
+function renderCustomerEmail({ m, session }) {
   const termsUrl = m.termsUrl || '';
   const dash = (v) => (v ? v : '—');
 
   const line1 = `${dash(m.bizName)} — Order confirmed`;
-  const plan = m.billing_type === 'one_time'
-    ? `One-time service`
-    : `Recurring (${dash(m.billing)} billing)`;
+  const plan =
+    m.billing_type === 'one_time'
+      ? `One-time service`
+      : `Recurring (${dash(m.billing)} billing)`;
 
   const serviceLines = [
     `Trash cadence: ${dash(m.cadence)} • Cans: ${dash(m.cans)}`,
     `Dumpster pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
-    `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)})` : 'No'}`
+    `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)})` : 'No'}`,
   ];
 
-  const amountLine = m.billing_type === 'one_time'
-    ? `Paid today: ${dash(moneyFromCents(session.amount_total))}`
-    : `Paid today: ${dash(moneyFromCents(session.amount_total))} (first billing)`;
+  const amountLine =
+    m.billing_type === 'one_time'
+      ? `Paid today: ${dash(moneyFromCents(session.amount_total))}`
+      : `Paid today: ${dash(moneyFromCents(session.amount_total))} (first billing)`;
 
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;">
@@ -92,7 +96,7 @@ function renderCustomerEmail({ m, session }){
         <div>Service address: ${dash(m.address)}</div>
         <div>Preferred service day: ${dash(m.preferredServiceDay)}</div>
         <div>Start date: ${dash(m.startDate)}</div>
-        <div style="margin-top:8px;">${serviceLines.map(x=>`<div>${x}</div>`).join('')}</div>
+        <div style="margin-top:8px;">${serviceLines.map(x => `<div>${x}</div>`).join('')}</div>
       </div>
 
       ${termsUrl ? `
@@ -127,13 +131,13 @@ function renderCustomerEmail({ m, session }){
     '',
     'Reply to this email if anything needs to change (gate code, access window, bin location).',
     '',
-    `Order ID: ${dash(m.orderId)}`
+    `Order ID: ${dash(m.orderId)}`,
   ].filter(Boolean).join('\n');
 
   return { html, text };
 }
 
-function renderOwnerEmail({ m, session }){
+function renderOwnerEmail({ m, session }) {
   const dash = (v) => (v ? v : '—');
 
   const html = `
@@ -181,7 +185,7 @@ function renderOwnerEmail({ m, session }){
     `Pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
     `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}`,
     '',
-    `Notes: ${dash(m.notes)}`
+    `Notes: ${dash(m.notes)}`,
   ].join('\n');
 
   return { html, text };
@@ -205,12 +209,12 @@ module.exports = async (req, res) => {
       case 'checkout.session.completed': {
         const session = event.data.object;
 
-        // For safety: only email when payment is actually paid.
-        if (session.payment_status && session.payment_status !== 'paid'){
+        // Only email when payment is actually paid.
+        if (session.payment_status && session.payment_status !== 'paid') {
           console.log('ℹ️ Checkout completed but not paid yet (skipping email)', {
             id: session.id,
             payment_status: session.payment_status,
-            mode: session.mode
+            mode: session.mode,
           });
           break;
         }
@@ -218,21 +222,23 @@ module.exports = async (req, res) => {
         const m = session.metadata || {};
         const ownerEmail = process.env.OWNER_EMAIL;
 
-        const customerEmail = safe(session.customer_details?.email || session.customer_email || m.customerEmail, 200);
-        if (!customerEmail){
-          console.warn('⚠️ Missing customer email; cannot send customer receipt', { id: session.id });
-        }
+        const customerEmail = safe(
+          session.customer_details?.email || session.customer_email || m.customerEmail,
+          200
+        );
 
         console.log('✅ Checkout paid; sending emails', {
           id: session.id,
           orderId: m.orderId,
           customerEmail,
+          ownerEmail,
           mode: session.mode,
-          amount_total: session.amount_total
+          amount_total: session.amount_total,
+          termsUrl: m.termsUrl,
         });
 
         // Customer email
-        if (customerEmail){
+        if (customerEmail) {
           const c = renderCustomerEmail({ m, session });
           await sendResendEmail({
             to: customerEmail,
@@ -240,12 +246,14 @@ module.exports = async (req, res) => {
             html: c.html,
             text: c.text,
             replyTo: ownerEmail || undefined,
-            idempotencyKey: `procan_${session.id}_customer`
+            idempotencyKey: `procan_${session.id}_customer`,
           });
+        } else {
+          console.warn('⚠️ Missing customer email; cannot send customer receipt', { id: session.id });
         }
 
         // Owner email
-        if (ownerEmail){
+        if (ownerEmail) {
           const o = renderOwnerEmail({ m, session });
           await sendResendEmail({
             to: ownerEmail,
@@ -253,7 +261,7 @@ module.exports = async (req, res) => {
             html: o.html,
             text: o.text,
             replyTo: customerEmail || undefined,
-            idempotencyKey: `procan_${session.id}_owner`
+            idempotencyKey: `procan_${session.id}_owner`,
           });
         } else {
           console.warn('⚠️ Missing OWNER_EMAIL; skipping internal notification');
@@ -262,50 +270,20 @@ module.exports = async (req, res) => {
         break;
       }
 
-      case 'invoice.paid': {
-        const invoice = event.data.object;
-        console.log('✅ Invoice paid', {
-          id: invoice.id,
-          subscription: invoice.subscription,
-          customer: invoice.customer,
-          amount_paid: invoice.amount_paid,
-          currency: invoice.currency,
-          billing_reason: invoice.billing_reason,
-        });
-        // Optional: send recurring-payment receipts here if you want later.
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        console.log('⚠️ Invoice payment failed', {
-          id: invoice.id,
-          subscription: invoice.subscription,
-          customer: invoice.customer,
-          attempt_count: invoice.attempt_count,
-          next_payment_attempt: invoice.next_payment_attempt,
-        });
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object;
-        console.log('🛑 Subscription canceled', {
-          id: sub.id,
-          status: sub.status,
-          canceled_at: sub.canceled_at,
-        });
-        break;
-      }
-
+      // Keep these quiet (no emails) — optional hooks for later
+      case 'invoice.paid':
+      case 'invoice.payment_failed':
+      case 'customer.subscription.deleted':
       default:
-        // Ignore other events
         break;
     }
 
-    return res.status(200).json({ received: true });
+    return res.status(200).send('ok');
   } catch (err) {
     console.error('Webhook handler error:', err);
-    return res.status(500).send(err?.message || 'Server error');
+    return res.status(500).send(err?.message || 'Webhook handler failed');
   }
 };
+
+// Disable body parsing so we can read raw body for signature verification
+module.exports.config = { api: { bodyParser: false } };
