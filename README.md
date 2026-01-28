@@ -1,3 +1,5 @@
+Build v2
+
 # ProCan Intake (preserved) + Stripe Checkout (Vercel)
 
 This package keeps your existing intake logic intact and ONLY adds Stripe Checkout at the final step.
