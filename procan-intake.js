@@ -130,6 +130,7 @@ const els = {
   back2: $('back2'),
   back3: $('back3'),
   saveAndContinue: $('saveAndContinue'),
+  paymentMethod: $('paymentMethod'),
   agreeTerms: $('agreeTerms'),
 
   // final screen timer
@@ -543,6 +544,7 @@ function collectForm(){
     notes: els.notes.value,
     startDate: els.startDate.value,
     oneTimeOnly: els.oneTimeOnly.checked,
+    paymentMethod: els.paymentMethod ? els.paymentMethod.value : 'card',
     discountCode: els.discountCode ? els.discountCode.value : ''
   };
 }
@@ -579,7 +581,8 @@ function buildSubmission(q){
       option: q.billing,
       monthsInTerm: q.termMonths,
       startDate: els.startDate.value || '',
-      oneTimeOnly: !!els.oneTimeOnly.checked
+      oneTimeOnly: !!els.oneTimeOnly.checked,
+      paymentMethod: (els.paymentMethod && els.paymentMethod.value === 'cash') ? 'cash' : 'card'
     },
     pricing: {
       discountCode: q.discountCode || '',
@@ -635,6 +638,11 @@ function loadDraft(){
     els.notes.value = f.notes || '';
     els.startDate.value = f.startDate || els.startDate.value || '';
     els.oneTimeOnly.checked = !!f.oneTimeOnly;
+
+    if (els.paymentMethod){
+      els.paymentMethod.value = (f.paymentMethod === 'cash') ? 'cash' : 'card';
+      setPaymentMethod(els.paymentMethod.value, { silent:true });
+    }
 
     if (els.discountCode){
       els.discountCode.value = f.discountCode || '';
@@ -703,6 +711,7 @@ function wipeDraft(){
 
   setCadence(uiState.cadence, { silent:true });
   setBilling(uiState.billing, { silent:true });
+  setPaymentMethod((els.paymentMethod && els.paymentMethod.value) ? els.paymentMethod.value : 'card', { silent:true });
   setStep(1, { silent:true });
 
   showErrors(els.errorsStep1, []);
@@ -769,6 +778,16 @@ function setBilling(b, opts={}){
     btn.classList.toggle('active', btn.getAttribute('data-bill') === b);
   });
   if (!opts.silent) update();
+}
+
+function setPaymentMethod(p, opts={}){
+  const v = (p === 'cash') ? 'cash' : 'card';
+  if (els.paymentMethod) els.paymentMethod.value = v;
+  // Toggle segmented UI
+  document.querySelectorAll('[data-pay]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.pay === v);
+  });
+  if (!opts.silent) updateConfirmGate();
 }
 function setStep(n, opts={}){
   uiState.step = n;
@@ -987,6 +1006,45 @@ async function startStripeCheckout(submission){
   }
 }
 
+async function startCashOrder(submission){
+  // Save payload locally
+  try{ localStorage.setItem(FINAL_KEY, JSON.stringify(submission)); }catch(e){}
+
+  const btn = els.saveAndContinue;
+  const oldText = btn ? btn.textContent : '';
+  if (btn){
+    btn.disabled = true;
+    btn.textContent = 'Saving cash order…';
+  }
+
+  try{
+    const res = await fetch('/api/create-cash-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submission })
+    });
+    if (!res.ok){
+      const t = await res.text().catch(()=> '');
+      throw new Error(`Cash order error (${res.status}): ${t || 'Failed to create order'}`);
+    }
+    const data = await res.json().catch(()=> ({}));
+
+    // Lightweight confirmation
+    alert('✅ Order recorded as Cash/Check. You can assign it in the ProCan dashboard.');
+
+    // Reset flow to start (so prospecting is fast)
+    try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+    try{ localStorage.removeItem(FINAL_KEY); }catch(e){}
+    window.location.href = './procan-intake.html';
+    return data;
+  } finally {
+    if (btn){
+      btn.disabled = false;
+      btn.textContent = oldText || 'Confirm';
+    }
+  }
+}
+
 // ===== Events =====
 function bind(){
     document.querySelectorAll('[data-cadence]').forEach(btn => {
@@ -994,6 +1052,10 @@ function bind(){
   });
   document.querySelectorAll('[data-bill]').forEach(btn => {
     btn.addEventListener('click', () => { setAutosaveEnabled(); setBilling(btn.dataset.bill); });
+  });
+
+  document.querySelectorAll('[data-pay]').forEach(btn => {
+    btn.addEventListener('click', () => { setAutosaveEnabled(); setPaymentMethod(btn.dataset.pay); });
   });
 
   [
@@ -1088,7 +1150,11 @@ els.next1.addEventListener('click', () => {
     }
     const payload = buildSubmission(q);
     localStorage.setItem(FINAL_KEY, JSON.stringify(payload));
-    startStripeCheckout(payload).catch((err)=>{ alert(err && err.message ? err.message : 'Payment checkout failed.'); });
+    if (payload?.billing?.paymentMethod === 'cash'){
+      startCashOrder(payload).catch((err)=>{ alert(err && err.message ? err.message : 'Cash order failed.'); });
+    } else {
+      startStripeCheckout(payload).catch((err)=>{ alert(err && err.message ? err.message : 'Payment checkout failed.'); });
+    }
 
   });
 

@@ -302,6 +302,21 @@
             </label>
           </div>
 
+          <div class="divider"></div>
+
+          <h2>Payment Method</h2>
+          <div class="row one">
+            <div class="field">
+              <label>How is the customer paying today?</label>
+              <div class="segmented" role="group" aria-label="Payment Method">
+                <button class="seg active" data-pay="card" type="button">Card (Stripe)</button>
+                <button class="seg" data-pay="cash" type="button">Cash / Check</button>
+              </div>
+              <div class="hint">Card opens Stripe Checkout. Cash/Check records the order and sends it to your dashboard for assignment.</div>
+              <input id="paymentMethod" type="hidden" value="card" />
+            </div>
+          </div>
+
 <div class="nav two">
             <button class="btn btn-ghost" id="back3" type="button">← Back</button>
             <button class="btn btn-primary" id="saveAndContinue" type="button" disabled>
