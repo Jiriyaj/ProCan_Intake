@@ -131,11 +131,25 @@ const els = {
   back3: $('back3'),
   saveAndContinue: $('saveAndContinue'),
   paymentMethod: $('paymentMethod'),
+  paymentBlock: $('paymentBlock'),
   agreeTerms: $('agreeTerms'),
 
   // final screen timer
   sessionTimerValue: $('sessionTimerValue')
 };
+
+// Cash/Check should only be available when "one-time clean only" is selected.
+function syncPaymentVisibility(opts={}){
+  const oneTime = !!(els.oneTimeOnly && els.oneTimeOnly.checked);
+  if (els.paymentBlock){
+    els.paymentBlock.style.display = oneTime ? '' : 'none';
+  }
+  // If not one-time, force Card so recurring flows always use Stripe.
+  if (!oneTime){
+    setPaymentMethod('card', { silent:true });
+  }
+  if (!opts.silent) updateConfirmGate();
+}
 
 // ===== UI State =====
 let uiState = {
@@ -796,7 +810,9 @@ function setStep(n, opts={}){
   // Entering step 2: require interaction before auto-advance.
   if (n === 2) uiState.step2Confirmed = false;
   // Final review always shows the summary (without changing your toggle state).
-applySummaryVisibility();
+  applySummaryVisibility();
+  // Payment method UI is only relevant on final review, and only for one-time orders.
+  syncPaymentVisibility({ silent:true });
 
   // Final screen timer: runs only while on Step 3
   if (n === 3) startFinalTimer();
@@ -1094,7 +1110,13 @@ function bind(){
   });
   // Start date + one-time toggle
   if (els.startDate) els.startDate.addEventListener('change', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
-  if (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
+  if (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
+    setAutosaveEnabled();
+    markStep2Confirmed();
+    uiState.suppressAutoAdvance = false;
+    syncPaymentVisibility();
+    scheduleAutoAdvance();
+  });
 
 // Discount code (optional)
   if (els.applyDiscount && els.discountCode){
