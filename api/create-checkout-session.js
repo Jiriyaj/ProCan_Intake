@@ -62,6 +62,8 @@ function buildSessionMetadata(submission, origin, computed){
     discountCode: metaStr(p.discountCode, 80),
     monthlyTotal: metaStr(num(p.monthlyTotal, 0), 40),
     dueToday: metaStr(num(p.dueToday, 0), 40),
+    normalDueToday: metaStr(num(p.normalDueToday, 0), 40),
+    isDeposit: metaStr(!!(computed?.billing_type === 'deposit'), 10),
 
     termsUrl
   };
@@ -91,11 +93,16 @@ module.exports = async (req, res) => {
     const dueToday = num(submission?.pricing?.dueToday, 0);
 
     const oneTimeOnly = !!submission?.billing?.oneTimeOnly;
+    const captureOnly = !!submission?.billing?.captureOnly;
+    const isDeposit = !!(submission?.billing?.depositReservation || submission?.billing?.deposit || submission?.pricing?.isDeposit);
 
-    if (!oneTimeOnly && monthlyTotal <= 0) {
+    if (!oneTimeOnly && !isDeposit && monthlyTotal <= 0) {
       return res.status(400).json({ error: 'Invalid monthly total.' });
     }
-    if (dueToday <= 0) {
+    if (!captureOnly && dueToday <= 0) {
+      return res.status(400).json({ error: 'Invalid due today total.' });
+    }
+    if (captureOnly && dueToday < 0) {
       return res.status(400).json({ error: 'Invalid due today total.' });
     }
 
@@ -105,7 +112,7 @@ module.exports = async (req, res) => {
     const serviceLabel = `ProCan Service — ${biz}`;
 
     const computed = {
-      billing_type: oneTimeOnly ? 'one_time' : 'subscription',
+      billing_type: oneTimeOnly ? 'one_time' : (isDeposit ? 'deposit' : (captureOnly ? 'setup' : 'subscription')),
       billing,
       termMonths,
       cadence,
@@ -124,10 +131,12 @@ module.exports = async (req, res) => {
             name: serviceLabel,
             description: oneTimeOnly
               ? `One-time service. Trash cadence: ${cadence}, cans: ${cans}`
-              : `Recurring service. Billing: ${billing} (${termMonths} mo). Trash cadence: ${cadence}, cans: ${cans}`,
+              : (isDeposit
+                  ? `Deposit reservation. Launch/start date: ${safeStr(submission?.billing?.startDate,'') || 'TBD'}. Trash cadence: ${cadence}, cans: ${cans}`
+                  : `Recurring service. Billing: ${billing} (${termMonths} mo). Trash cadence: ${cadence}, cans: ${cans}`),
           },
           unit_amount: dueTodayCents,
-          ...(oneTimeOnly
+          ...(oneTimeOnly || isDeposit
             ? {}
             : {
                 recurring: {
@@ -146,12 +155,52 @@ module.exports = async (req, res) => {
 
     let session;
 
-    if (oneTimeOnly) {
+    // For "deposit" payments (mode=payment) we want to:
+    //  1) always create a Stripe Customer
+    //  2) save the payment method for future off-session use
+    // This lets you later create a subscription at launch WITHOUT customer re-entry.
+    let customerId = null;
+    if (isDeposit || captureOnly) {
+      const customer = await stripe.customers.create({
+        email: email || undefined,
+        name: biz || undefined,
+        metadata: {
+          orderId: sessionMetadata.orderId || 'unknown',
+          source: isDeposit ? 'procan_intake_deposit' : 'procan_intake_setup',
+        },
+      });
+      customerId = customer.id;
+    }
+
+    
+    if (captureOnly){
+      // Save card only (no charge). Use Setup mode.
+      session = await stripe.checkout.sessions.create({
+        mode: 'setup',
+        payment_method_types: ['card'],
+        ...(customerId
+          ? { customer: customerId }
+          : { customer_email: email || undefined }),
+        setup_intent_data: {
+          metadata: sessionMetadata,
+        },
+        metadata: sessionMetadata,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      });
+    } else if (oneTimeOnly || isDeposit) {
       // One-time payment checkout
       session = await stripe.checkout.sessions.create({
         mode: 'payment',
         payment_method_types: ['card'],
-        customer_email: email || undefined,
+        ...(customerId
+          ? { customer: customerId }
+          : { customer_email: email || undefined }),
+        // Save payment method for later subscription creation (Model A)
+        payment_intent_data: {
+          setup_future_usage: isDeposit ? 'off_session' : undefined,
+          metadata: sessionMetadata,
+        },
         line_items: lineItems.map(li => ({
           ...li,
           price_data: {

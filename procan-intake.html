@@ -108,15 +108,14 @@
               <div class="hint">Multi-location discount auto-applies.</div>
             </div>
             <div class="field">
-              <label>Preferred Service Day (Mon–Fri)</label>
+              <label>Preferred Service Window</label>
               <select id="serviceDay">
-                <option value="unspecified">N/A</option>
-                <option>Monday</option>
-                <option>Tuesday</option>
-                <option>Wednesday</option>
-                <option>Thursday</option>
-                <option>Friday</option>
-              </select>
+                <option value="unspecified">Any weekday (recommended)</option>
+                <option value="mon_thu">Mon–Thu window</option>
+                <option value="fri_sat">Fri–Sat window</option>
+                <option value="weekend">Weekend only</option>
+                <option value="after_hours">After-hours OK</option>
+</select>
             </div>
           </div>
 
@@ -266,6 +265,16 @@
                 <span>Customer wants a one-time clean only (no recurring)</span>
               </label>
               <div class="hint">If checked, due today becomes one-visit pricing + any deep clean.</div>
+            </div>
+          </div>
+
+          <div class="row one" id="depositRow">
+            <div class="field">
+              <label class="check check-top">
+                <input id="depositToggle" type="checkbox" />
+                <span>Take a $25 deposit today to reserve a route spot (start later)</span>
+              </label>
+              <div class="hint">Keeps the full quote the same, but sets <b>Due Today</b> to <b>$25</b>. (Remaining balance is collected at launch.)</div>
             </div>
           </div>
 

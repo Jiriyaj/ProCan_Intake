@@ -31,6 +31,29 @@ function safe(v, max = 500) {
   const s = String(v ?? '').trim();
   if (!s) return '';
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
+
+
+function getZipFromAddress(address){
+  const s = String(address||'');
+  const m = s.match(/\b(\d{5})(?:-\d{4})?\b/);
+  return m ? m[1] : '';
+}
+function inferZone(address){
+  const zip = getZipFromAddress(address);
+  if (zip) return zip;
+  const a = String(address||'').trim();
+  if (a) return a.slice(0, 10).toUpperCase();
+  return 'default';
+}
+function normalizeFrequencyFromCadence(cadence){
+  const c = String(cadence||'').toLowerCase();
+  if (c.includes('bi')) return 'biweekly';
+  return 'monthly';
+}
+function parseCansField(cans){
+  const n = parseInt(String(cans ?? ''), 10);
+  return Number.isFinite(n) ? n : 0;
+}
 }
 
 /**
@@ -58,8 +81,12 @@ async function upsertSupabaseOrder({ session, m }) {
     return Number.isFinite(x) ? x : null;
   };
 
-  // Align to your existing orders table schema (see your supabase-schema.sql)
-  const row = {
+  const isDeposit = String(m.isDeposit || '').toLowerCase() === 'true' || safe(m.billing_type, 40) === 'deposit';
+  const depositAmount = isDeposit ? (n(m.dueToday) ?? (Number(session.amount_total || 0) / 100)) : null;
+  const normalDueToday = isDeposit ? n(m.normalDueToday) : null;
+
+  // Base row aligned to your existing orders table schema
+  const baseRow = {
     stripe_session_id: session.id,
     order_id: safe(m.orderId, 80) || null,
 
@@ -100,6 +127,92 @@ async function upsertSupabaseOrder({ session, m }) {
     status: 'new',
   };
 
+  // Extended fields (safe to include if you've added columns)
+  const extendedRow = {
+    ...baseRow,
+    stripe_customer_id: session.customer || null,
+    stripe_payment_intent_id: session.payment_intent || null,
+    is_deposit: isDeposit,
+    deposit_amount: depositAmount,
+    normal_due_today: normalDueToday,
+    stripe_subscription_id: session.subscription || null,
+  };
+
+  async function doUpsert(payloadRow){
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=representation',
+      },
+      body: JSON.stringify([payloadRow]),
+    });
+  }
+
+  // Try extended first; if schema doesn't include new columns yet, retry with base.
+  let res = await doUpsert(extendedRow);
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    const missingCol = /column\s+"(stripe_customer_id|is_deposit|deposit_amount|normal_due_today|stripe_payment_intent_id|stripe_subscription_id)"\s+of\s+relation\s+"orders"\s+does\s+not\s+exist/i.test(t);
+    if (missingCol) {
+      console.log('ℹ️ Orders table missing extended columns; retrying base upsert');
+      res = await doUpsert(baseRow);
+      if (!res.ok) {
+        const t2 = await res.text().catch(() => '');
+        throw new Error(`Supabase upsert error (${res.status}): ${t2 || 'Failed to upsert order'}`);
+      }
+    } else {
+      throw new Error(`Supabase upsert error (${res.status}): ${t || 'Failed to upsert order'}`);
+    }
+  }
+
+  const data = await res.json().catch(() => []);
+  return Array.isArray(data) ? data[0] : data;
+}
+
+
+/**
+ * NEW: upsert customer (for routing/availability) into public.customers.
+ * Uses stripe_customer_id as the stable key.
+ */
+async function upsertSupabaseCustomer({ session, m }){
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+
+  const stripeCustomerId = session.customer || null;
+  if (!stripeCustomerId) return null;
+
+  const endpoint = `${supabaseUrl}/rest/v1/customers?on_conflict=stripe_customer_id`;
+
+  const isDeposit = String(m.isDeposit || '').toLowerCase() === 'true' || safe(m.billing_type, 40) === 'deposit';
+  const isSetup = safe(m.billing_type, 40) === 'setup' || session.mode === 'setup';
+  const status = isDeposit ? 'deposited' : (isSetup ? 'lead' : 'active');
+
+  const row = {
+    biz_name: safe(m.bizName, 200) || null,
+    contact_name: safe(m.contactName, 200) || null,
+    customer_email: safe(m.customerEmail || session.customer_details?.email || session.customer_email, 200) || null,
+    phone: safe(m.phone, 60) || null,
+    address: safe(m.address, 300) || null,
+    zone: inferZone(m.address),
+    frequency: normalizeFrequencyFromCadence(m.cadence),
+    cans: parseCansField(m.cans),
+    preferred_window: safe(m.preferredServiceDay, 40) || null,
+    start_after: safe(m.startDate, 40) ? safe(m.startDate, 40) : null,
+
+    status,
+    deposit_amount: isDeposit ? Number(m.dueToday || 25) : 0,
+    deposit_paid_at: isDeposit ? new Date().toISOString() : null,
+
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: session.subscription || null,
+    pm_saved: (isDeposit || isSetup) ? true : false,
+    created_at: new Date().toISOString()
+  };
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -111,11 +224,10 @@ async function upsertSupabaseOrder({ session, m }) {
     body: JSON.stringify([row]),
   });
 
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`Supabase upsert error (${res.status}): ${t || 'Failed to upsert order'}`);
+  if (!res.ok){
+    const t = await res.text().catch(()=> '');
+    throw new Error(`Supabase customer upsert error (${res.status}): ${t || 'Failed to upsert customer'}`);
   }
-
   const data = await res.json().catch(() => []);
   return Array.isArray(data) ? data[0] : data;
 }
@@ -169,9 +281,11 @@ function renderCustomerEmail({ m, session }) {
   ];
 
   const amountLine =
-    m.billing_type === 'one_time'
-      ? `Paid today: ${dash(moneyFromCents(session.amount_total))}`
-      : `Paid today: ${dash(moneyFromCents(session.amount_total))} (first billing)`;
+    (session.mode === 'setup' || m.billing_type === 'setup')
+      ? `Payment method saved: No charge today`
+      : (m.billing_type === 'one_time'
+          ? `Paid today: ${dash(moneyFromCents(session.amount_total))}`
+          : `Paid today: ${dash(moneyFromCents(session.amount_total))} (first billing)`);
 
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;">
@@ -298,8 +412,9 @@ module.exports = async (req, res) => {
       case 'checkout.session.completed': {
         const session = event.data.object;
 
-        // For safety: only email when payment is actually paid.
-        if (session.payment_status && session.payment_status !== 'paid'){
+        // Allow paid checkouts AND setup-mode checkouts (no charge, card saved).
+        const isSetup = session.mode === 'setup';
+        if (!isSetup && session.payment_status && session.payment_status !== 'paid'){
           console.log('ℹ️ Checkout completed but not paid yet (skipping email)', {
             id: session.id,
             payment_status: session.payment_status,
@@ -329,6 +444,7 @@ module.exports = async (req, res) => {
         // NEW: persist into Supabase (safe upsert, handles webhook retries)
         try {
           const saved = await upsertSupabaseOrder({ session, m, ownerEmail, customerEmail });
+          try { await upsertSupabaseCustomer({ session, m }); } catch(e){ console.error('❌ Supabase customer upsert failed:', e?.message||e); }
           if (saved?.id) console.log('✅ Supabase upsert ok', { order_row_id: saved.id });
         } catch (e) {
           console.error('❌ Supabase upsert failed (continuing to email anyway):', e?.message || e);

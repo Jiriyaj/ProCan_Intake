@@ -96,6 +96,8 @@ const els = {
   notes: $('notes'),
   startDate: $('startDate'),
   oneTimeOnly: $('oneTimeOnly'),
+  depositToggle: $('depositToggle'),
+  depositRow: $('depositRow'),
 
   // discount
   discountCode: $('discountCode'),
@@ -141,6 +143,18 @@ const els = {
 // Cash/Check should only be available when "one-time clean only" is selected.
 function syncPaymentVisibility(opts={}){
   const oneTime = !!(els.oneTimeOnly && els.oneTimeOnly.checked);
+  const deposit = !!(els.depositToggle && els.depositToggle.checked);
+
+  // Deposit is for reserving a recurring spot; it can't be combined with one-time service.
+  if (oneTime && deposit && els.depositToggle){
+    els.depositToggle.checked = false;
+  }
+
+  // Hide/disable deposit UI when one-time is selected
+  if (els.depositRow){
+    els.depositRow.style.display = oneTime ? 'none' : '';
+  }
+
   if (els.paymentBlock){
     els.paymentBlock.style.display = oneTime ? '' : 'none';
   }
@@ -148,6 +162,11 @@ function syncPaymentVisibility(opts={}){
   if (!oneTime){
     setPaymentMethod('card', { silent:true });
   }
+  // Remember deposit state
+  uiState.deposit = !!(els.depositToggle && els.depositToggle.checked && !oneTime);
+  const oneTimeNow = !!(els.oneTimeOnly && els.oneTimeOnly.checked);
+  const startISO = els.startDate ? String(els.startDate.value||'').trim() : '';
+  uiState.captureOnly = (!oneTimeNow && !uiState.deposit && isFutureStartDate(startISO));
   if (!opts.silent) updateConfirmGate();
 }
 
@@ -158,6 +177,8 @@ let uiState = {
   discountRate: 0,
   cadence: 'biweekly', // biweekly | monthly | none
   billing: 'monthly',  // monthly | quarterly | annual
+  deposit: false,
+  captureOnly: false,
   hideSummary: true,
   step2Confirmed: false,
   suppressAutoAdvance: true
@@ -204,6 +225,17 @@ function isValidEmail(s){
   const v = String(s || '').trim();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
+
+function isFutureStartDate(startDateISO){
+  const s = String(startDateISO || '').trim();
+  if (!s) return false;
+  const d = new Date(s + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return d.getTime() > t0.getTime();
+}
+
 
 
 // ===== Discount codes =====
@@ -315,6 +347,7 @@ function silentResetToDefaults(){
   els.deepQty.value = '0';
   els.notes.value = '';
   els.oneTimeOnly.checked = false;
+  if (els.depositToggle) els.depositToggle.checked = false;
   if (els.discountCode) els.discountCode.value = '';
   if (els.discountApplied) els.discountApplied.textContent = '';
 
@@ -324,6 +357,7 @@ function silentResetToDefaults(){
   uiState.step2Confirmed = false;
   uiState.discountCode = '';
   uiState.discountRate = 0;
+  uiState.deposit = false;
 
   attemptedNext1 = false;
   attemptedNext2 = false;
@@ -390,6 +424,7 @@ function computeQuote(){
   const locDisc = PRICING.multiLocationDiscount(locations) || 0;
 
   const oneTimeOnly = !!els.oneTimeOnly.checked;
+  const deposit = !!(els.depositToggle && els.depositToggle.checked) && !oneTimeOnly;
 
   let trashMonthly = 0;
   let trashVisitsPerMonth = 0;
@@ -445,6 +480,7 @@ function computeQuote(){
   //   (i.e., NOT a per-visit split.)
   // - Dumpster pad: charge the selected cadence's monthly price as a one-time price (no per-visit split).
   let dueToday = 0;
+  let normalDueToday = 0;
   if (oneTimeOnly){
     let trashOneTime = 0;
     if (canQty > 0 && cadence !== 'none'){
@@ -461,9 +497,22 @@ function computeQuote(){
     }
 
     perVisitTotal = (trashOneTime + padOneTime) * (1 - codeDisc);
-    dueToday = perVisitTotal + deepCleanTotal;
+    normalDueToday = perVisitTotal + deepCleanTotal;
+    dueToday = normalDueToday;
   } else {
-    dueToday = (monthlyTotal * termMonths) + deepCleanTotal;
+    normalDueToday = (monthlyTotal * termMonths) + deepCleanTotal;
+    dueToday = normalDueToday;
+  }
+
+  // Deposit reservation rule: keep full quote details, but charge $25 today.
+  // (Remaining balance collected at launch / start date.)
+  if (deposit){
+    dueToday = 25;
+  }
+
+  // Card capture (no charge): if start date is in the future, save card now and charge on first service.
+  if (!oneTimeOnly && !deposit && uiState.captureOnly){
+    dueToday = 0;
   }
 
   const discountTotal = Math.max(0, baseMonthly - monthlyTotal);
@@ -481,6 +530,9 @@ function computeQuote(){
     perVisitTotal,
     deepCleanTotal,
     dueToday,
+    normalDueToday,
+    isDeposit: deposit,
+    captureOnly: uiState.captureOnly,
     discountTotal
   };
 }
@@ -558,6 +610,7 @@ function collectForm(){
     notes: els.notes.value,
     startDate: els.startDate.value,
     oneTimeOnly: els.oneTimeOnly.checked,
+    deposit: !!(els.depositToggle && els.depositToggle.checked),
     paymentMethod: els.paymentMethod ? els.paymentMethod.value : 'card',
     discountCode: els.discountCode ? els.discountCode.value : ''
   };
@@ -596,6 +649,8 @@ function buildSubmission(q){
       monthsInTerm: q.termMonths,
       startDate: els.startDate.value || '',
       oneTimeOnly: !!els.oneTimeOnly.checked,
+      captureOnly: !!uiState.captureOnly,
+      deposit: !!q.isDeposit,
       paymentMethod: (els.paymentMethod && els.paymentMethod.value === 'cash') ? 'cash' : 'card'
     },
     pricing: {
@@ -607,7 +662,10 @@ function buildSubmission(q){
       discountTotal: q.discountTotal,
       locationDiscountRate: q.locDisc,
       billingDiscountRate: q.billDisc,
-      dueToday: q.dueToday
+      dueToday: q.dueToday,
+      normalDueToday: q.normalDueToday,
+      isDeposit: !!q.isDeposit,
+      depositAmount: q.isDeposit ? 25 : 0
     },
     notes: els.notes.value.trim()
   };
@@ -652,6 +710,7 @@ function loadDraft(){
     els.notes.value = f.notes || '';
     els.startDate.value = f.startDate || els.startDate.value || '';
     els.oneTimeOnly.checked = !!f.oneTimeOnly;
+    if (els.depositToggle) els.depositToggle.checked = !!f.deposit;
 
     if (els.paymentMethod){
       els.paymentMethod.value = (f.paymentMethod === 'cash') ? 'cash' : 'card';
@@ -726,6 +785,7 @@ function wipeDraft(){
   setCadence(uiState.cadence, { silent:true });
   setBilling(uiState.billing, { silent:true });
   setPaymentMethod((els.paymentMethod && els.paymentMethod.value) ? els.paymentMethod.value : 'card', { silent:true });
+    syncPaymentVisibility({ silent:true });
   setStep(1, { silent:true });
 
   showErrors(els.errorsStep1, []);
@@ -862,6 +922,7 @@ function update(opts={}){
 
     els.kpiMonthly.textContent = money(q.monthlyTotal);
     els.kpiDue.textContent = money(q.dueToday);
+    if (q.captureOnly){ els.kpiDue.title = 'Card will be saved now; you will be charged when service begins.'; }
     els.kpiDiscounts.textContent = money(q.discountTotal);
 
     els.qMonthly.textContent = money(q.monthlyTotal);
@@ -896,9 +957,11 @@ function update(opts={}){
 
       const deepSuffix = (q.deepCleanTotal > 0) ? ' + deep clean' : '';
 
-      const dueRule = els.oneTimeOnly.checked
-        ? `Due today is <b>one visit</b>${deepSuffix}`
-        : `Due today is <b>${q.termMonths} month(s)</b> prepay${deepSuffix}`;
+      const dueRule = q.isDeposit
+        ? `Due today is a <b>$25 deposit</b> (reserves spot). Normal due at launch: <b>${money(q.normalDueToday)}</b>${deepSuffix}`
+        : (els.oneTimeOnly.checked
+            ? `Due today is <b>one visit</b>${deepSuffix}`
+            : `Due today is <b>${q.termMonths} month(s)</b> prepay${deepSuffix}`);
       
     const breakdownHtml = `
       <div><b>Cadence:</b> ${cadenceLabel}</div>
@@ -956,7 +1019,8 @@ function renderReview(){
       <div class="review-item"><b>Deep Clean:</b> ${submission.services.deepClean.enabled ? 'Yes' : 'No'}</div>
 
       <div class="review-item"><b>Monthly Total:</b> ${money(submission.pricing.monthlyTotal)}</div>
-      <div class="review-item"><b>Due Today:</b> ${money(submission.pricing.dueToday)}</div>
+      <div class="review-item"><b>Due Today:</b> ${money(submission.pricing.dueToday)}${submission.pricing.isDeposit ? ' (deposit)' : (submission.billing.captureOnly ? ' (card saved; charged at start)' : '')}</div>
+      ${submission.pricing.isDeposit ? `<div class="review-item"><b>Normal Due at Launch:</b> ${money(submission.pricing.normalDueToday)}</div>` : ``}
       <div class="review-item"><b>Discounts:</b> ${money(submission.pricing.discountTotal)}</div>
       <div class="review-item"><b>Per Visit:</b> ${money(submission.pricing.perVisitTotal)}</div>
     </div>
@@ -1079,7 +1143,7 @@ function bind(){
     els.canQty, els.locations, els.serviceDay,
     els.padAddon, els.padSize, els.padCadence,
     els.deepClean, els.deepLevel, els.deepApplies, els.deepQty,
-    els.notes, els.startDate, els.oneTimeOnly
+    els.notes, els.startDate, els.oneTimeOnly, els.depositToggle
   ].forEach(el => {
     if (!el) return;
     el.addEventListener('input', () => {
@@ -1115,6 +1179,15 @@ function bind(){
     markStep2Confirmed();
     uiState.suppressAutoAdvance = false;
     syncPaymentVisibility();
+    scheduleAutoAdvance();
+  });
+
+  if (els.depositToggle) els.depositToggle.addEventListener('change', () => {
+    setAutosaveEnabled();
+    markStep2Confirmed();
+    uiState.suppressAutoAdvance = false;
+    syncPaymentVisibility();
+    update();
     scheduleAutoAdvance();
   });
 
