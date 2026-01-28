@@ -38,7 +38,7 @@ function safe(v, max = 500) {
  * - Uses service role key (server-only) to bypass RLS safely.
  * - Upserts on stripe_session_id so retries don’t duplicate rows.
  */
-async function upsertSupabaseOrder({ session, m, ownerEmail, customerEmail }) {
+async function upsertSupabaseOrder({ session, m }) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -49,29 +49,37 @@ async function upsertSupabaseOrder({ session, m, ownerEmail, customerEmail }) {
 
   const endpoint = `${supabaseUrl}/rest/v1/orders?on_conflict=stripe_session_id`;
 
+  const i = (v) => {
+    const n = parseInt(String(v ?? ''), 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const n = (v) => {
+    const x = Number(v);
+    return Number.isFinite(x) ? x : null;
+  };
+
+  // Align to your existing orders table schema (see your supabase-schema.sql)
   const row = {
     stripe_session_id: session.id,
     order_id: safe(m.orderId, 80) || null,
-    paid_at: session.created ? new Date(session.created * 1000).toISOString() : new Date().toISOString(),
-    status: 'paid',
-
-    mode: safe(session.mode, 40) || null,
-    amount_total: Number(session.amount_total || 0),
-
-    customer_email: safe(customerEmail, 200) || null,
-    owner_email: safe(ownerEmail, 200) || null,
 
     biz_name: safe(m.bizName, 200) || null,
     contact_name: safe(m.contactName, 200) || null,
+    customer_email: safe(m.customerEmail || session.customer_details?.email || session.customer_email, 200) || null,
     phone: safe(m.phone, 60) || null,
-
     address: safe(m.address, 300) || null,
-    locations: safe(m.locations, 120) || null,
+
+    locations_count: i(m.locationsCount || m.locations),
     preferred_service_day: safe(m.preferredServiceDay, 40) || null,
     start_date: safe(m.startDate, 40) || null,
+    notes: safe(m.notes, 1000) || null,
+
+    billing_type: safe(m.billing_type, 40) || null,
+    billing: safe(m.billing, 40) || null,
+    term_months: i(m.term_months || m.termMonths),
 
     cadence: safe(m.cadence, 40) || null,
-    cans: m.cans ? Number(m.cans) : null,
+    cans: safe(m.cans, 40) || null,
 
     pad_enabled: String(m.padEnabled || '').toLowerCase() === 'true',
     pad_size: safe(m.padSize, 40) || null,
@@ -79,15 +87,17 @@ async function upsertSupabaseOrder({ session, m, ownerEmail, customerEmail }) {
 
     deep_clean_enabled: String(m.deepCleanEnabled || '').toLowerCase() === 'true',
     deep_clean_level: safe(m.deepCleanLevel, 40) || null,
-    deep_clean_qty: m.deepCleanQty ? Number(m.deepCleanQty) : null,
+    deep_clean_qty: m.deepCleanQty != null ? String(m.deepCleanQty) : null,
+    deep_clean_total: n(m.deepCleanTotal),
 
-    billing: safe(m.billing, 40) || null,
-    billing_type: safe(m.billing_type, 40) || null,
+    discount_code: safe(m.discountCode, 60) || null,
+    monthly_total: n(m.monthlyTotal),
+    due_today: n(m.dueToday),
 
-    notes: safe(m.notes, 1000) || null,
     terms_url: safe(m.termsUrl, 500) || null,
 
-    raw_metadata: m || {},
+    // Keep status consistent with your dashboard workflow
+    status: 'new',
   };
 
   const res = await fetch(endpoint, {
