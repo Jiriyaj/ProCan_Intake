@@ -1,423 +1,361 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ProCan Intake — Quote → Contract → Pay</title>
-  <link rel="stylesheet" href="./procan-intake.css" />
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ProCan Intake — Quote → Contract → Pay</title>
+<link href="./procan-intake.css" rel="stylesheet"/>
 </head>
 <body>
-  <div class="shell">
-    <header class="topbar">
-      <div class="brand" aria-label="ProCan Sanitation">
-        <!-- Uses a transparent ProCan mark (no background) -->
-        <img class="brand-image" src="./assets/procan-intake-logo.png" alt="ProCan Sanitation" onerror="this.style.display='none';document.getElementById('brandFallback').style.display='block';">
-      
-        <span class="brand-fallback" id="brandFallback">ProCan Sanitation</span>
+<div class="shell">
+<header class="topbar">
+<div aria-label="ProCan Sanitation" class="brand">
+<!-- Uses a transparent ProCan mark (no background) -->
+<img alt="ProCan Sanitation" class="brand-image" onerror="this.style.display='none';document.getElementById('brandFallback').style.display='block';" src="./assets/procan-intake-logo.png"/>
+<span class="brand-fallback" id="brandFallback">ProCan Sanitation</span>
 </div>
-
-      <!-- Discreet admin/menu button -->
-      <div class="menu-wrap">
-        <button class="icon-btn" id="btnMenu" type="button" aria-label="Menu">
-          <span aria-hidden="true">⋯</span>
-        </button>
-        <div class="menu" id="menu" role="menu" aria-hidden="true">
-          <button class="menu-item" id="btnToggleSummary" type="button" role="menuitem">Toggle Quote Summary</button>
-          <div class="menu-sep"></div>
-          <button class="menu-item" id="btnLoadDraft" type="button" role="menuitem">Load Draft</button>
-          <button class="menu-item danger" id="btnWipeDraft" type="button" role="menuitem">Wipe Draft</button>
-        </div>
-      </div>
-    </header>
-
-    <main class="grid">
-      <!-- Left: form -->
-      <section class="card form-card">
-        <div class="card-header">
-          <h1>Service Submission</h1>
-        
-          <div class="session-timer" id="sessionTimer" aria-live="polite">
-            <span class="session-timer-label">Session resets in</span>
-            <span class="session-timer-value" id="sessionTimerValue">05:00</span>
-          </div>
-        </div>
-        
-
-        <!-- STEP 1 -->
-        <div class="step-panel active" data-panel="1">
-          <h2>Account</h2>
-
-          <!-- Validation shows only after you try to continue -->
-          <div class="error-box" id="errorsStep1" hidden></div>
-
-          <div class="row two">
-            <div class="field">
-              <label>Business / Account Name</label>
-              <input id="bizName" placeholder="e.g., Joe’s BBQ - Downtown" autocomplete="organization" />
-            </div>
-            <div class="field">
-              <label>Primary Contact</label>
-              <input id="contactName" placeholder="Full name" autocomplete="name" />
-            </div>
-          </div>
-
-          <div class="row two">
-            <div class="field">
-              <label>Phone</label>
-              <input id="phone" inputmode="tel" placeholder="(###) ###-####" autocomplete="tel" />
-            </div>
-            <div class="field">
-              <label>Email (for receipt + terms)</label>
-              <input id="email" inputmode="email" placeholder="billing@business.com" autocomplete="email" />
-            </div>
-          </div>
-
-          <div class="row one">
-            <div class="field">
-              <label>Service Address</label>
-              <input id="address" placeholder="Street, City, State, Zip" autocomplete="street-address" />
-              <div id="addressSuggestWrap" class="suggest-wrap" aria-label="Address suggestions" hidden>
-                <div id="addressSuggest" class="suggest-list" role="listbox"></div>
-              </div>
-              <div id="addressError" class="field-error" role="alert" hidden>Please select a valid address from the suggestions.</div>
-            </div>
-          </div>
-
-          <div class="divider"></div>
-
-          <h2>Core Service</h2>
-
-          <div class="row two">
-            <div class="field">
-              <label>Trash Can Cleaning Cadence</label>
-              <div class="segmented" role="group" aria-label="Cadence">
-                <button class="seg active" data-cadence="biweekly" type="button">Biweekly</button>
-                <button class="seg" data-cadence="monthly" type="button">Monthly</button>
-                <button class="seg" data-cadence="none" type="button">None</button>
-              </div>
-              <div class="hint">Biweekly = every other week. Monthly = 1x per month.</div>
-            </div>
-
-            <div class="field">
-              <label>Total # of Cans (all locations)</label>
-              <input id="canQty" type="number" min="0" step="1" value="0" />
-              <div class="hint">Tiered pricing is per-can per month.</div>
-            </div>
-          </div>
-
-          <div class="row two">
-            <div class="field">
-              <label>(#) of Locations</label>
-              <input id="locations" type="number" min="1" step="1" value="1" />
-              <div class="hint">Multi-location discount auto-applies.</div>
-            </div>
-            <div class="field">
-              <label>Preferred Service Window</label>
-              <select id="serviceDay">
-                <option value="unspecified">Any weekday (recommended)</option>
-                <option value="mon_thu">Mon–Thu window</option>
-                <option value="fri_sat">Fri–Sat window</option>
-                <option value="weekend">Weekend only</option>
-                <option value="after_hours">After-hours OK</option>
+<!-- Discreet admin/menu button -->
+<div class="menu-wrap">
+<button aria-label="Menu" class="icon-btn" id="btnMenu" type="button">
+<span aria-hidden="true">⋯</span>
+</button>
+<div aria-hidden="true" class="menu" id="menu" role="menu">
+<button class="menu-item" id="btnToggleSummary" role="menuitem" type="button">Toggle Quote Summary</button>
+<div class="menu-sep"></div>
+<button class="menu-item" id="btnLoadDraft" role="menuitem" type="button">Load Draft</button>
+<button class="menu-item danger" id="btnWipeDraft" role="menuitem" type="button">Wipe Draft</button>
+</div>
+</div>
+</header>
+<main class="grid">
+<!-- Left: form -->
+<section class="card form-card">
+<div class="card-header">
+<h1>Service Submission</h1>
+<div aria-live="polite" class="session-timer" id="sessionTimer">
+<span class="session-timer-label">Session resets in</span>
+<span class="session-timer-value" id="sessionTimerValue">05:00</span>
+</div>
+</div>
+<!-- STEP 1 -->
+<div class="step-panel active" data-panel="1">
+<h2>Account</h2>
+<!-- Validation shows only after you try to continue -->
+<div class="error-box" hidden="" id="errorsStep1"></div>
+<div class="row two">
+<div class="field">
+<label>Business / Account Name</label>
+<input autocomplete="organization" id="bizName" placeholder="e.g., Joe’s BBQ - Downtown"/>
+</div>
+<div class="field">
+<label>Primary Contact</label>
+<input autocomplete="name" id="contactName" placeholder="Full name"/>
+</div>
+</div>
+<div class="row two">
+<div class="field">
+<label>Phone</label>
+<input autocomplete="tel" id="phone" inputmode="tel" placeholder="(###) ###-####"/>
+</div>
+<div class="field">
+<label>Email (for receipt + terms)</label>
+<input autocomplete="email" id="email" inputmode="email" placeholder="billing@business.com"/>
+</div>
+</div>
+<div class="row one">
+<div class="field">
+<label>Service Address</label>
+<input autocomplete="street-address" id="address" placeholder="Street, City, State, Zip"/>
+<div aria-label="Address suggestions" class="suggest-wrap" hidden="" id="addressSuggestWrap">
+<div class="suggest-list" id="addressSuggest" role="listbox"></div>
+</div>
+<div class="field-error" hidden="" id="addressError" role="alert">Please select a valid address from the suggestions.</div>
+</div>
+</div>
+<div class="divider"></div>
+<h2>Core Service</h2>
+<div class="row two">
+<div class="field">
+<label>Trash Can Cleaning Cadence</label>
+<div aria-label="Cadence" class="segmented" role="group">
+<button class="seg active" data-cadence="biweekly" type="button">Biweekly</button>
+<button class="seg" data-cadence="monthly" type="button">Monthly</button>
+<button class="seg" data-cadence="none" type="button">None</button>
+</div>
+<div class="hint">Biweekly = every other week. Monthly = 1x per month.</div>
+</div>
+<div class="field">
+<label>Total # of Cans (all locations)</label>
+<input id="canQty" min="0" step="1" type="number" value="0"/>
+<div class="hint">Tiered pricing is per-can per month.</div>
+</div>
+</div>
+<div class="row two">
+<div class="field">
+<label>(#) of Locations</label>
+<input id="locations" min="1" step="1" type="number" value="1"/>
+<div class="hint">Multi-location discount auto-applies.</div>
+</div>
+<div class="field">
+<label>Preferred Service Window</label>
+<select id="serviceDay">
+<option value="unspecified">Any weekday (recommended)</option>
+<option value="mon_thu">Mon–Thu window</option>
+<option value="fri_sat">Fri–Sat window</option>
+<option value="weekend">Weekend only</option>
+<option value="after_hours">After-hours OK</option>
 </select>
-            </div>
-          </div>
-
-          <div class="divider"></div>
-
-          <h2>Add-ons</h2>
-
-          <div class="addon">
-            <label class="check">
-              <input id="padAddon" type="checkbox" />
-              <span>Dumpster Pad Pressure Washing</span>
-            </label>
-
-            <div class="row two pad-options">
-              <div class="field">
-                <label>Pad Size</label>
-                <select id="padSize" disabled>
-                  <option value="small">Small (10x10)</option>
-                  <option value="medium">Medium (15x20)</option>
-                  <option value="large">Large (20x30+)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Pad Cadence</label>
-                <select id="padCadence" disabled>
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Biweekly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-                <div class="hint">Monthly pad uses your monthly service pricing.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="addon">
-            <label class="check check-top">
-              <input id="deepClean" type="checkbox" />
-              <span>One-time Initial Deep Clean (RECOMMENDED)</span>
-            </label>
-
-            <div class="row two deep-options">
-              <div class="field">
-                <label>Condition</label>
-                <select id="deepLevel" disabled>
-                  <option value="standard">Standard ($35/can)</option>
-                  <option value="heavy">Heavy ($50/can)</option>
-                  <option value="extreme">Extreme ($75/can)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Deep Clean Applies To</label>
-                <select id="deepApplies" disabled>
-                  <option value="allCans">All cans</option>
-                  <option value="someCans">Some cans (enter # below)</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="row one deep-options">
-              <div class="field">
-                <label>(#) of Cans for Deep Clean</label>
-                <input id="deepQty" type="number" min="0" step="1" value="0" disabled />
-              </div>
-            </div>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="row one">
-            <div class="field">
-              <label>Notes</label>
-              <textarea id="notes" placeholder="Gate code, access instructions, bin locations, etc."></textarea>
-            </div>
-          </div>
-
-          <div class="nav">
-            <button class="btn btn-primary" id="next1" type="button">Continue → Quote</button>
-          </div>
-        </div>
-
-        <!-- STEP 2 -->
-        <div class="step-panel" data-panel="2">
-          <h2>Service Quote</h2>
-
-          <div class="error-box" id="errorsStep2" hidden></div>
-
-          <div class="quote-card" id="embeddedQuote">
-            <div class="quote-row">
-              <div class="quote-kpi">
-                <div class="q-label">Estimated Monthly</div>
-                <div class="q-value" id="qMonthly">$0.00</div>
-              </div>
-<div class="quote-kpi">
-                <div class="q-label">Discounts</div>
-                <div class="q-value" id="qDisc">$0.00</div>
-              </div>
-            </div>
-            <div class="line"></div>
-            <div class="mini" id="embeddedBreakdown"></div>
-          </div>
-
-          <div class="divider"></div>
-
-          <h2>Billing</h2>
-
-          <div class="row two">
-            <div class="field">
-              <label>Billing Option</label>
-              <div class="segmented" role="group" aria-label="Billing">
-                <button class="seg active" data-bill="monthly" type="button">Monthly</button>
-                <button class="seg" data-bill="quarterly" type="button">Quarterly (5% off)</button>
-                <button class="seg" data-bill="annual" type="button">Annual (10% off, $1k+/mo)</button>
-              </div>
-              <div class="hint">Auto-draft via card. ACH can be added after onboarding (if offered).</div>
-            </div>
 </div>
-          <div class="row two">
-            <div class="field">
-              <label>Discount Code</label>
-              <div class="inline">
-                <input id="discountCode" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off" />
-                <button class="btn btn-ghost inline-btn" id="applyDiscount" type="button">Apply</button>
-                <button class="btn btn-ghost inline-btn" id="removeDiscount" type="button" hidden>Remove</button>
-              </div>
-              <div class="hint" id="discountApplied" aria-live="polite"></div>
-            </div>
-            <div class="field">
-              <label> </label>
-              <div class="hint">Codes apply to recurring service only (not deep clean).</div>
-            </div>
-          </div>
+</div>
+<div class="divider"></div>
+<h2>Add-ons</h2>
+<div class="addon">
+<label class="check">
+<input id="padAddon" type="checkbox"/>
+<span>Dumpster Pad Pressure Washing</span>
+</label>
+<div class="row two pad-options">
+<div class="field">
+<label>Pad Size</label>
+<select disabled="" id="padSize">
+<option value="small">Small (10x10)</option>
+<option value="medium">Medium (15x20)</option>
+<option value="large">Large (20x30+)</option>
+</select>
+</div>
+<div class="field">
+<label>Pad Cadence</label>
+<select disabled="" id="padCadence">
+<option value="weekly">Weekly</option>
+<option value="biweekly">Biweekly</option>
+<option value="monthly">Monthly</option>
+</select>
+<div class="hint">Monthly pad uses your monthly service pricing.</div>
+</div>
+</div>
+</div>
+<div class="addon">
+<label class="check check-top">
+<input id="deepClean" type="checkbox"/>
+<span>One-time Initial Deep Clean (RECOMMENDED)</span>
+</label>
+<div class="row two deep-options">
+<div class="field">
+<label>Condition</label>
+<select disabled="" id="deepLevel">
+<option value="standard">Standard ($35/can)</option>
+<option value="heavy">Heavy ($50/can)</option>
+<option value="extreme">Extreme ($75/can)</option>
+</select>
+</div>
+<div class="field">
+<label>Deep Clean Applies To</label>
+<select disabled="" id="deepApplies">
+<option value="allCans">All cans</option>
+<option value="someCans">Some cans (enter # below)</option>
+</select>
+</div>
+</div>
+<div class="row one deep-options">
+<div class="field">
+<label>(#) of Cans for Deep Clean</label>
+<input disabled="" id="deepQty" min="0" step="1" type="number" value="0"/>
+</div>
+</div>
+</div>
+<div class="divider"></div>
+<div class="row one">
+<div class="field">
+<label>Notes</label>
+<textarea id="notes" placeholder="Gate code, access instructions, bin locations, etc."></textarea>
+</div>
+</div>
+<div class="nav">
+<button class="btn btn-primary" id="next1" type="button">Continue → Quote</button>
+</div>
+</div>
+<!-- STEP 2 -->
+<div class="step-panel" data-panel="2">
+<h2>Service Quote</h2>
+<div class="error-box" hidden="" id="errorsStep2"></div>
+<div class="quote-card" id="embeddedQuote">
+<div class="quote-row">
+<div class="quote-kpi">
+<div class="q-label">Estimated Monthly</div>
+<div class="q-value" id="qMonthly">$0.00</div>
+</div>
+<div class="quote-kpi">
+<div class="q-label">Discounts</div>
+<div class="q-value" id="qDisc">$0.00</div>
+</div>
+</div>
+<div class="line"></div>
+<div class="mini" id="embeddedBreakdown"></div>
+</div>
+<div class="divider"></div>
+<h2>Billing</h2>
+<div class="row two">
+<div class="field">
+<label>Billing Option</label>
+<div aria-label="Billing" class="segmented" role="group">
+<button class="seg active" data-bill="monthly" type="button">Monthly</button>
+<button class="seg" data-bill="quarterly" type="button">Quarterly (5% off)</button>
+<button class="seg" data-bill="annual" type="button">Annual (10% off, $1k+/mo)</button>
+</div>
+<div class="hint">Auto-draft via card. ACH can be added after onboarding (if offered).</div>
+</div>
 
-          </div>
-
-          <div class="divider"></div>
-
-          <h2></h2>
-          <div class="row one">
-            <div class="field">
-              <label class="check check-top">
-                <input id="oneTimeOnly" type="checkbox" />
-                <span>Customer wants a one-time clean only (no recurring)</span>
-              </label>
-              <div class="hint">If checked, due today becomes one-visit pricing + any deep clean.</div>
-            </div>
-          </div>
-
-          <div class="row one" id="depositRow">
-            <div class="field">
-              <label class="check check-top">
-                <input id="depositToggle" type="checkbox" />
-                <span>Take a $25 deposit today to reserve a route spot (start later)</span>
-              </label>
-              <div class="hint">Keeps the full quote the same, but sets <b>Due Today</b> to <b>$25</b>. (Remaining balance is collected at launch.)</div>
-            </div>
-          </div>
-
-          <div class="nav two">
-            <button class="btn btn-ghost" id="back2" type="button">← Back</button>
-            <button class="btn btn-primary" id="next2" type="button">Continue → Review</button>
-          </div>
-        </div>
-
-        <!-- STEP 3 -->
-        <div class="step-panel" data-panel="3">
-          <h2>Review</h2>
-
-          <div class="review-box" id="reviewBox"></div>
-
-          <details class="payload-details">
-            <summary>Show payload JSON (for contract → payment)</summary>
-            <pre id="payloadPre"></pre>
-          </details>
-
-          
-          <div class="tos-block">
-            <div class="tos-text" id="tosText">
+<div class="row two">
+<div class="field">
+<label>Discount Code</label>
+<div class="inline">
+<input autocapitalize="characters" autocomplete="off" id="discountCode" placeholder="XXXXXX"/>
+<button class="btn btn-ghost inline-btn" id="applyDiscount" type="button">Apply</button>
+<button class="btn btn-ghost inline-btn" hidden="" id="removeDiscount" type="button">Remove</button>
+</div>
+<div aria-live="polite" class="hint" id="discountApplied"></div>
+</div>
+<div class="field">
+<label> </label>
+<div class="hint">Codes apply to recurring service only (not deep clean).</div>
+</div>
+</div>
+</div>
+<div class="divider"></div>
+<h2></h2>
+<div class="row one">
+<div class="field">
+<label class="check check-top">
+<input id="oneTimeOnly" type="checkbox"/>
+<span>Customer wants a one-time clean only (no recurring)</span>
+</label>
+<div class="hint">If checked, due today becomes one-visit pricing + any deep clean.</div>
+</div>
+</div>
+<div class="row one" id="depositRow">
+<div class="field">
+<label class="check check-top">
+<input id="depositToggle" type="checkbox"/>
+<span>Take a $25 deposit today to reserve a route spot (start later)</span>
+</label>
+<div class="hint">Keeps the full quote the same, but sets <b>Due Today</b> to <b>$25</b>. (Remaining balance is collected at launch.)</div>
+</div>
+</div>
+<div class="nav two">
+<button class="btn btn-ghost" id="back2" type="button">← Back</button>
+<button class="btn btn-primary" id="next2" type="button">Continue → Review</button>
+</div>
+</div>
+<!-- STEP 3 -->
+<div class="step-panel" data-panel="3">
+<h2>Review</h2>
+<div class="review-box" id="reviewBox"></div>
+<details class="payload-details">
+<summary>Show payload JSON (for contract → payment)</summary>
+<pre id="payloadPre"></pre>
+</details>
+<div class="tos-block">
+<div class="tos-text" id="tosText">
                 By checking this box, you agree to our
-                <a href="./terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
+                <a href="./terms.html" rel="noopener" target="_blank">Terms &amp; Conditions</a>
                 and authorize ProCan Sanitation LLC™ to provide services.
                 <b>If this is a recurring plan</b>, you also authorize Stripe to automatically charge your payment method
                 according to the selected billing option (monthly / quarterly / annual) until canceled per the Terms.
                 If “one-time clean only” is selected, you authorize a one-time charge only.
               </div>
-            <label class="check check-top tos-check">
-              <input type="checkbox" id="agreeTerms" />
-              <span>I have read and agree to the Terms &amp; Conditions</span>
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div id="paymentBlock">
-            <h2>Payment Method</h2>
-            <div class="row one">
-              <div class="field">
-                <label>How is the customer paying today?</label>
-                <div class="segmented" role="group" aria-label="Payment Method">
-                  <button class="seg active" data-pay="card" type="button">Card (Stripe)</button>
-                  <button class="seg" data-pay="cash" type="button">Cash / Check</button>
-                </div>
-                <div class="hint">Card opens Stripe Checkout. Cash/Check records the order and sends it to your dashboard for assignment.</div>
-                <input id="paymentMethod" type="hidden" value="card" />
-              </div>
-            </div>
-          </div>
-
+<label class="check check-top tos-check">
+<input id="agreeTerms" type="checkbox"/>
+<span>I have read and agree to the Terms &amp; Conditions</span>
+</label>
+</div>
+<div class="divider"></div>
+<div id="paymentBlock">
+<h2>Payment Method</h2>
+<div class="row one">
+<div class="field">
+<label>How is the customer paying today?</label>
+<div aria-label="Payment Method" class="segmented" role="group">
+<button class="seg active" data-pay="card" type="button">Card (Stripe)</button>
+<button class="seg" data-pay="cash" type="button">Cash / Check</button>
+</div>
+<div class="hint">Card opens Stripe Checkout. Cash/Check records the order and sends it to your dashboard for assignment.</div>
+<input id="paymentMethod" type="hidden" value="card"/>
+</div>
+</div>
+</div>
 <div class="nav two">
-            <button class="btn btn-ghost" id="back3" type="button">← Back</button>
-            <button class="btn btn-primary" id="saveAndContinue" type="button" disabled>
+<button class="btn btn-ghost" id="back3" type="button">← Back</button>
+<button class="btn btn-primary" disabled="" id="saveAndContinue" type="button">
               Confirm
             </button>
-          </div>
-
- 
-        </div>
-      
-        <!-- STEP 4 (Order Complete) -->
-        <div class="step-panel" data-panel="4" id="successPanel">
-          <h2>Order Complete</h2>
-
-          <div class="success-box">
-            <div class="success-title">Payment processed ✅</div>
-            <div class="success-sub">We received your payment and secured your spot. You’ll get a confirmation email shortly.</div>
-
-            <div class="review-box" id="successSummary"></div>
-
-            <div class="nav">
-              <button class="btn" id="startNewOrder" type="button">Start New Order</button>
-            </div>
-          </div>
-        </div>
+</div>
+</div>
+<div class="step-panel" data-panel="4">
+<h2>Order Complete</h2>
+<div class="success-box">
+<div class="success-title">Payment processed</div>
+<div class="success-sub">Your deposit has been received and your order is reserved. Route start date will be scheduled in the dashboard.</div>
+<div class="review-box" id="successSummary"></div>
+</div>
+<div class="nav">
+<button class="btn btn-primary" id="btnNewOrder" type="button">Start New Order</button>
+</div>
+</div>
 
 </section>
-
-      <!-- Right: sticky summary (toggleable only on step 1) -->
-      <aside class="card summary-card" id="summaryCard">
-        <div class="card-header">
-          <h1>Quote Summary</h1>
-          <div class="badge" id="summaryBadge">Draft</div>
-        </div>
-
-        <div class="summary-block">
-          <div class="kpi">
-            <div class="kpi-label">Estimated Monthly Total</div>
-            <div class="kpi-value" id="kpiMonthly">$0.00</div>
-          </div>
-
-          <div class="kpi">
-            <div class="kpi-label">Due Today</div>
-            <div class="kpi-value" id="kpiDue">$0.00</div>
-          </div>
-
-          <div class="kpi">
-            <div class="kpi-label">Discounts Applied</div>
-            <div class="kpi-value" id="kpiDiscounts">$0.00</div>
-          </div>
-
-          <div class="line"></div>
-
-          <div class="mini" id="breakdown"></div>
-
-          <div class="line"></div>
-
-          <div class="trust">
-            <div class="trust-title">Included with every visit</div>
-            <ul>
-              <li>High-pressure wash (inside & out)</li>
-              <li>Sanitizer + deodorizer</li>
-              <li>Drain & dry</li>
-              <li>Before/after photos</li>
-              <li>Consistent schedule</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="footer-note">
-          
-        </div>
-      </aside>
-    </main>
-  </div>
-  <div class="transition-overlay" id="transitionOverlay" aria-hidden="true">
-    <div class="boot">
-      <div class="boot-top">
-        <div class="boot-dot"></div>
-        <div class="boot-title">JAIDA SEQUENCE</div>
-      </div>
-      <div class="boot-lines" aria-hidden="true">
-        <div class="boot-line"></div><div class="boot-line"></div><div class="boot-line"></div>
-      </div>
-      <div class="boot-bar"><div class="boot-bar-fill"></div></div>
-      <div class="boot-sub" id="bootSub">Processing…</div>
-    </div>
-  </div>
-
-
-  <script src="https://js.stripe.com/v3/"></script>
-  <script src="./procan-intake.js"></script>
+<!-- Right: sticky summary (toggleable only on step 1) -->
+<aside class="card summary-card" id="summaryCard">
+<div class="card-header">
+<h1>Quote Summary</h1>
+<div class="badge" id="summaryBadge">Draft</div>
+</div>
+<div class="summary-block">
+<div class="kpi">
+<div class="kpi-label">Estimated Monthly Total</div>
+<div class="kpi-value" id="kpiMonthly">$0.00</div>
+</div>
+<div class="kpi">
+<div class="kpi-label">Due Today</div>
+<div class="kpi-value" id="kpiDue">$0.00</div>
+</div>
+<div class="kpi">
+<div class="kpi-label">Discounts Applied</div>
+<div class="kpi-value" id="kpiDiscounts">$0.00</div>
+</div>
+<div class="line"></div>
+<div class="mini" id="breakdown"></div>
+<div class="line"></div>
+<div class="trust">
+<div class="trust-title">Included with every visit</div>
+<ul>
+<li>High-pressure wash (inside &amp; out)</li>
+<li>Sanitizer + deodorizer</li>
+<li>Drain &amp; dry</li>
+<li>Before/after photos</li>
+<li>Consistent schedule</li>
+</ul>
+</div>
+</div>
+<div class="footer-note">
+</div>
+</aside>
+</main>
+</div>
+<div aria-hidden="true" class="transition-overlay" id="transitionOverlay">
+<div class="boot">
+<div class="boot-top">
+<div class="boot-dot"></div>
+<div class="boot-title">JAIDA SEQUENCE</div>
+</div>
+<div aria-hidden="true" class="boot-lines">
+<div class="boot-line"></div><div class="boot-line"></div><div class="boot-line"></div>
+</div>
+<div class="boot-bar"><div class="boot-bar-fill"></div></div>
+<div class="boot-sub" id="bootSub">Processing…</div>
+</div>
+</div>
+<script src="https://js.stripe.com/v3/"></script>
+<script src="./procan-intake.js"></script>
 </body>
 </html>

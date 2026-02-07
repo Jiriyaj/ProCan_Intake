@@ -620,9 +620,3 @@ body.hide-summary .grid{ grid-template-columns: 1fr; }
 .suggest-item:last-child{border-bottom:none;}
 .suggest-item:hover,.suggest-item[aria-selected='true']{background:rgba(255,255,255,0.08);}
 .field-error{margin-top:8px;color:#ffb4b4;font-size:13px;}
-
-
-/* Order complete */
-.success-box{padding:14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
-.success-title{font-weight:700;font-size:18px;margin-bottom:6px}
-.success-sub{opacity:.85;margin-bottom:12px;line-height:1.35}

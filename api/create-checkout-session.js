@@ -44,6 +44,7 @@ function buildSessionMetadata(submission, origin, computed){
     geoSource: metaStr(b.geoSource, 40),
     locations: metaStr(b.locations, 40),
     preferredServiceDay: metaStr(b.preferredServiceDay, 40),
+    startDate: metaStr(bill.startDate, 40),
     notes: metaStr(submission?.notes, 240),
 
     billing_type: computed.billing_type,

@@ -94,7 +94,7 @@ const els = {
   deepQty: $('deepQty'),
 
   notes: $('notes'),
-oneTimeOnly: $('oneTimeOnly'),
+  oneTimeOnly: $('oneTimeOnly'),
   depositToggle: $('depositToggle'),
   depositRow: $('depositRow'),
 
@@ -159,7 +159,7 @@ async function __nominatimSuggest(q){
   return Array.isArray(data) ? data : [];
 }
 
-function __renderAddressSuggest(items){
+function __renderAddressSuggestfunction __renderAddressSuggest(items){
   const wrap = document.getElementById('addressSuggestWrap');
   const list = document.getElementById('addressSuggest');
   const err = document.getElementById('addressError');
@@ -260,7 +260,6 @@ function syncPaymentVisibility(opts={}){
   // Remember deposit state
   uiState.deposit = !!(els.depositToggle && els.depositToggle.checked && !oneTime);
   const oneTimeNow = !!(els.oneTimeOnly && els.oneTimeOnly.checked);
-  uiState.captureOnly = false; // start date is chosen in the dashboard
   if (!opts.silent) updateConfirmGate();
 }
 
@@ -652,7 +651,8 @@ function validateStep1(){
 
 function validateStep2(){
   const errs = [];
-    const q = computeQuote();
+  if (!d) errs.push('Start date is required.');
+  const q = computeQuote();
   if (!q.ok) errs.push(q.error || 'Fix quote inputs.');
   return errs;
 }
@@ -1095,7 +1095,7 @@ function renderReview(){
       <div class="review-item"><b>Email:</b> ${escapeHtml(submission.business.email || '')}</div>
       <div class="review-item"><b>Phone:</b> ${escapeHtml(submission.business.phone || '')}</div>
       <div class="review-item"><b>Address:</b> ${escapeHtml(submission.business.address || '')}</div>
-<div class="review-item"><b>Trash Cadence:</b> ${escapeHtml(submission.services.trash.cadence)}</div>
+      <div class="review-item"><b>Trash Cadence:</b> ${escapeHtml(submission.services.trash.cadence)}</div>
       <div class="review-item"><b># Cans:</b> ${submission.services.trash.cans}</div>
       <div class="review-item"><b>Pad Add-on:</b> ${submission.services.pad.enabled ? 'Yes' : 'No'}</div>
       <div class="review-item"><b>Deep Clean:</b> ${submission.services.deepClean.enabled ? 'Yes' : 'No'}</div>
@@ -1110,6 +1110,49 @@ function renderReview(){
   els.payloadPre.textContent = JSON.stringify(submission, null, 2);
 }
 
+
+
+function renderSuccessScreen(){
+  const box = document.getElementById('successSummary');
+  if (!box) return;
+
+  let payload = null;
+  try{
+    payload = JSON.parse(localStorage.getItem(FINAL_KEY) || 'null');
+  }catch(e){ payload = null; }
+
+  if (!payload){
+    box.innerHTML = '<div class="review-item"><b>Summary:</b> Unable to load local summary. Your payment was processed.</div>';
+  } else {
+    const biz = payload.business || {};
+    const pricing = payload.pricing || {};
+    const svc = payload.service || payload.billing || {};
+    const cans = Number(payload.service?.canQty || payload.billing?.canQty || payload.canQty || 0) || Number(biz.cans || 0) || 0;
+    box.innerHTML = `
+      <div class="review-item"><b>Business:</b> ${escapeHtml(biz.name || '')}</div>
+      <div class="review-item"><b>Address:</b> ${escapeHtml(biz.address || '')}</div>
+      <div class="review-item"><b>Cans:</b> ${cans}</div>
+      <div class="review-item"><b>Service:</b> ${escapeHtml(payload.billing?.cadence || payload.cadence || '')}</div>
+      <div class="review-item"><b>Billing:</b> ${escapeHtml(payload.billing?.bill || payload.bill || '')}</div>
+      <div class="review-item"><b>Deposit Paid:</b> $25.00</div>
+      <div class="review-item"><b>Est. Monthly:</b> ${money(pricing.monthlyTotal || 0)}</div>
+    `;
+  }
+
+  const btn = document.getElementById('btnNewOrder');
+  if (btn){
+    btn.onclick = () => {
+      try{
+        localStorage.removeItem(DRAFT_KEY);
+        localStorage.removeItem(FINAL_KEY);
+      }catch(e){}
+      // clear query params and reload to step 1
+      const url = new URL(location.href);
+      url.search = '';
+      location.replace(url.toString());
+    };
+  }
+}
 
 // ===== Stripe Checkout (Payments) =====
 // This requires a backend endpoint that creates the Checkout Session:
@@ -1178,9 +1221,6 @@ async function startStripeCheckout(submission){
     }else{
       try{ document.getElementById('addressError').hidden = true; }catch(e){}
     }
-
-    // Save a local copy so we can render a confirmation page after Stripe redirects back
-    storeLastSubmission(submission);
 
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
@@ -1299,8 +1339,7 @@ function bind(){
   document.querySelectorAll('[data-bill]').forEach(btn => {
     btn.addEventListener('click', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
   });
-  // one-time toggle
-  if (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
+  // Start date + one-time toggleif (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
     setAutosaveEnabled();
     markStep2Confirmed();
     uiState.suppressAutoAdvance = false;
@@ -1386,108 +1425,35 @@ els.next1.addEventListener('click', () => {
   }
 }
 
-
-function storeLastSubmission(submission){
-  try{
-    const oid = submission?.meta?.id ? String(submission.meta.id) : '';
-    if (!oid) return;
-    localStorage.setItem('procan_last_oid', oid);
-    localStorage.setItem(`procan_last_submission_${oid}`, JSON.stringify(submission));
-  }catch(e){}
-}
-
-function loadLastSubmission(oid){
-  try{
-    const keyOid = oid || localStorage.getItem('procan_last_oid') || '';
-    if (!keyOid) return null;
-    const raw = localStorage.getItem(`procan_last_submission_${keyOid}`);
-    return raw ? JSON.parse(raw) : null;
-  }catch(e){
-    return null;
-  }
-}
-
-function showOrderComplete(oid){
-  const panel = document.getElementById('successPanel');
-  const box = document.getElementById('successSummary');
-  const btn = document.getElementById('startNewOrder');
-
-  const submission = loadLastSubmission(oid);
-  if (box){
-    if (submission){
-      const biz = submission.business || {};
-      const s = submission.services || {};
-      const p = submission.pricing || {};
-      const bill = submission.billing || {};
-      const lines = [
-        `<div class="review-item"><b>Order ID:</b> ${escapeHtml(String(submission?.meta?.id||oid||''))}</div>`,
-        `<div class="review-item"><b>Business:</b> ${escapeHtml(biz.name||'')}</div>`,
-        `<div class="review-item"><b>Address:</b> ${escapeHtml(biz.address||'')}</div>`,
-        `<div class="review-item"><b>Service:</b> ${escapeHtml((s.trash?.cadence||'') + '')} • ${escapeHtml(String(s.trash?.cans||''))} cans</div>`,
-        `<div class="review-item"><b>Billing:</b> ${escapeHtml(bill.option||'')}</div>`,
-        `<div class="review-item"><b>Paid Today:</b> ${money(p.dueToday||0)}</div>`
-      ];
-      box.innerHTML = lines.join('\n');
-    }else{
-      box.innerHTML = `<div class="review-item"><b>Order ID:</b> ${escapeHtml(String(oid||''))}</div>`;
-    }
-  }
-
-  // Lock UI into the completion state
-  setStep(4, { silent:true });
-
-  if (btn){
-    btn.onclick = () => {
-      try{
-        // reset URL params
-        const url = new URL(window.location.href);
-        url.searchParams.delete('paid');
-        url.searchParams.delete('oid');
-        url.searchParams.delete('canceled');
-        window.history.replaceState({}, '', url.toString());
-      }catch(e){}
-      // Reset app state
-      try{ localStorage.removeItem('procan_intake_autosave'); }catch(e){}
-      uiState.step2Confirmed = false;
-      uiState.hideSummary = true;
-      applySummaryVisibility();
-      setStep(1, { silent:true });
-      update({ silent:true });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-  }
-}
-
 function init(){
   bindMenu();
   bind();
   __setupAddressAutocomplete();
 
-  // Stripe redirect back
-  const params = new URLSearchParams(window.location.search);
-  const paid = params.get('paid');
-  const canceled = params.get('canceled');
-  const oid = params.get('oid');
-
-  if (paid === '1'){
-    showOrderComplete(oid);
-    return;
-  }
-  if (canceled === '1'){
-    // Stay on step 3 so the user can try again
-    setStep(3, { silent:true });
-  }
-
   if (els.discountCode){ applyDiscountCode(els.discountCode.value, { silent:true }); }
 
   setCadence(uiState.cadence, { silent:true });
   setBilling(uiState.billing, { silent:true });
+
+  // If Stripe redirected back after successful payment, show confirmation screen.
+  const params = new URLSearchParams(location.search);
+  const paid = params.get('paid') === '1';
+  if (paid){
+    renderSuccessScreen();
+    setStep(4, { silent:true });
+    uiState.hideSummary = true;
+    applySummaryVisibility();
+    update({ silent:true });
+    return;
+  }
+
   setStep(1, { silent:true });
   uiState.hideSummary = true;
   uiState.step2Confirmed = false;
   applySummaryVisibility();
   update({ silent:true });
 }
+
 
 // ===== Menu =====
 function toggleMenu(open){
