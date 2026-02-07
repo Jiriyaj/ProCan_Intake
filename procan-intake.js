@@ -140,6 +140,103 @@ const els = {
   sessionTimerValue: $('sessionTimerValue')
 };
 
+// Address autocomplete selection (prevents bad geocodes)
+let __addressPick = null;
+let __addressQueryTimer = null;
+
+function __debounceAddress(fn, wait){
+  return (...args)=>{
+    if (__addressQueryTimer) clearTimeout(__addressQueryTimer);
+    __addressQueryTimer = setTimeout(()=>fn(...args), wait);
+  };
+}
+
+async function __nominatimSuggest(q){
+  const qs = new URLSearchParams({
+    q,
+    format: 'json',
+    limit: '5',
+    addressdetails: '1',
+    countrycodes: 'us'
+  });
+  const url = 'https://nominatim.openstreetmap.org/search?' + qs.toString();
+  const resp = await fetch(url, { headers: { 'Accept': 'application/json' }});
+  if (!resp.ok) return [];
+  const data = await resp.json().catch(()=>[]);
+  return Array.isArray(data) ? data : [];
+}
+
+function __renderAddressSuggest(items){
+  const wrap = document.getElementById('addressSuggestWrap');
+  const list = document.getElementById('addressSuggest');
+  const err = document.getElementById('addressError');
+  if (!wrap || !list) return;
+  list.innerHTML = '';
+  if (!items || items.length === 0){
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  if (err) err.hidden = true;
+
+  items.forEach((hit, idx)=>{
+    const div = document.createElement('div');
+    div.className = 'suggest-item';
+    div.setAttribute('role','option');
+    div.setAttribute('data-idx', String(idx));
+    div.textContent = hit.display_name || '';
+    div.addEventListener('mousedown', (e)=>{
+      e.preventDefault();
+      __selectAddressHit(hit);
+    });
+    list.appendChild(div);
+  });
+}
+
+function __selectAddressHit(hit){
+  __addressPick = hit || null;
+  if (els.address && hit?.display_name){
+    els.address.value = hit.display_name;
+  }
+  // hide suggestions
+  const wrap = document.getElementById('addressSuggestWrap');
+  if (wrap) wrap.hidden = true;
+  const err = document.getElementById('addressError');
+  if (err) err.hidden = true;
+}
+
+function setupAddressAutocomplete(){
+  if (!els.address) return;
+  const run = __debounceAddress(async ()=>{
+    const q = String(els.address.value || '').trim();
+    __addressPick = null; // reset until user selects
+    if (q.length < 6){
+      __renderAddressSuggest([]);
+      return;
+    }
+    try{
+      const items = await __nominatimSuggest(q);
+      __renderAddressSuggest(items);
+    }catch(e){
+      __renderAddressSuggest([]);
+    }
+  }, 250);
+
+  els.address.addEventListener('input', run);
+  els.address.addEventListener('focus', ()=>{
+    const q = String(els.address.value || '').trim();
+    if (q.length >= 6) run();
+  });
+  els.address.addEventListener('blur', ()=>{
+    // hide suggestions shortly after blur to allow click
+    setTimeout(()=>{
+      const wrap = document.getElementById('addressSuggestWrap');
+      if (wrap) wrap.hidden = true;
+    }, 120);
+  });
+}
+
+
 // Cash/Check should only be available when "one-time clean only" is selected.
 function syncPaymentVisibility(opts={}){
   const oneTime = !!(els.oneTimeOnly && els.oneTimeOnly.checked);
@@ -624,7 +721,11 @@ function buildSubmission(q){
       contactName: els.contactName.value.trim(),
       phone: els.phone.value.trim(),
       email: els.email.value.trim(),
-      address: els.address.value.trim(),
+      address: (__addressPick?.display_name ? String(__addressPick.display_name) : els.address.value.trim()),
+      geoLat: (__addressPick?.lat ? String(__addressPick.lat) : undefined),
+      geoLng: (__addressPick?.lon ? String(__addressPick.lon) : undefined),
+      geoSource: (__addressPick ? 'nominatim_suggest' : undefined),
+      geoAccuracy: (__addressPick?.type ? String(__addressPick.type) : undefined),
       locations: q.locations,
       preferredServiceDay: els.serviceDay.value || 'unspecified'
     },
@@ -1053,14 +1154,27 @@ async function geocodeBusinessAddress(submission){
     const url = 'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
       q: addr,
       format: 'json',
-      limit: '1',
-      addressdetails: '1'
+      limit: '5',
+      addressdetails: '1',
+      countrycodes: 'us'
     }).toString();
 
     const resp = await fetch(url, { headers: { 'Accept': 'application/json' }});
     if (!resp.ok) return submission;
     const data = await resp.json().catch(()=> []);
-    const hit = Array.isArray(data) ? data[0] : null;
+    const hits = Array.isArray(data) ? data : [];
+    const scoreHit = (h)=>{
+      const imp = typeof h.importance === 'number' ? h.importance : parseFloat(h.importance||'0') || 0;
+      const cls = String(h.class||'');
+      const typ = String(h.type||'');
+      let bonus = 0;
+      if (cls === 'building') bonus += 0.25;
+      if (cls === 'amenity' || cls === 'shop' || cls === 'office') bonus += 0.15;
+      if (typ.includes('house') || typ.includes('address')) bonus += 0.2;
+      const us = (h.address && String(h.address.country_code||'').toLowerCase()==='us') ? 0.2 : 0;
+      return imp + bonus + us;
+    };
+    const hit = hits.sort((a,b)=>scoreHit(b)-scoreHit(a))[0] || null;
     if (!hit || !hit.lat || !hit.lon) return submission;
 
     submission.business.geoLat = String(hit.lat);
@@ -1087,6 +1201,14 @@ async function startStripeCheckout(submission){
 
   try{
     submission = await geocodeBusinessAddress(submission);
+    // Require a valid geocode (prevents ocean/invalid pins)
+    if (!submission?.business?.geoLat || !submission?.business?.geoLng){
+      try{ document.getElementById('addressError').hidden = false; }catch(e){}
+      throw new Error('Address could not be verified. Please select a suggestion.');
+    }else{
+      try{ document.getElementById('addressError').hidden = true; }catch(e){}
+    }
+
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1298,6 +1420,7 @@ function init(){
 
   bindMenu();
   bind();
+  __setupAddressAutocomplete();
 
   if (els.discountCode){ applyDiscountCode(els.discountCode.value, { silent:true }); }
 

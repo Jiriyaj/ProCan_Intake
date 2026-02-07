@@ -76,6 +76,10 @@
             <div class="field">
               <label>Service Address</label>
               <input id="address" placeholder="Street, City, State, Zip" autocomplete="street-address" />
+              <div id="addressSuggestWrap" class="suggest-wrap" aria-label="Address suggestions" hidden>
+                <div id="addressSuggest" class="suggest-list" role="listbox"></div>
+              </div>
+              <div id="addressError" class="field-error" role="alert" hidden>Please select a valid address from the suggestions.</div>
             </div>
           </div>
 

@@ -610,3 +610,13 @@ body.hide-summary .grid{ grid-template-columns: 1fr; }
 .form-card:has(.step-panel[data-panel="3"].active) .card-header #sessionTimer {
   display: flex;
 }
+
+
+/* Address autocomplete */
+.suggest-wrap{position:relative;}
+#addressSuggestWrap{margin-top:8px;}
+.suggest-list{border:1px solid rgba(255,255,255,0.12);background:rgba(10,10,10,0.95);backdrop-filter: blur(10px);border-radius:12px;overflow:hidden;max-height:220px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,0.35);}
+.suggest-item{padding:10px 12px;cursor:pointer;font-size:14px;line-height:1.2;border-bottom:1px solid rgba(255,255,255,0.06);}
+.suggest-item:last-child{border-bottom:none;}
+.suggest-item:hover,.suggest-item[aria-selected='true']{background:rgba(255,255,255,0.08);}
+.field-error{margin-top:8px;color:#ffb4b4;font-size:13px;}
