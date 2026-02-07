@@ -152,21 +152,15 @@ function __debounceAddress(fn, wait){
 }
 
 async function __nominatimSuggest(q){
-  const qs = new URLSearchParams({
-    q,
-    format: 'json',
-    limit: '5',
-    addressdetails: '1',
-    countrycodes: 'us'
-  });
-  const url = 'https://nominatim.openstreetmap.org/search?' + qs.toString();
+  const qs = new URLSearchParams({ q: String(q || '').trim() }).toString();
+  const url = '/api/address-suggest?' + qs;
   const resp = await fetch(url, { headers: { 'Accept': 'application/json' }});
   if (!resp.ok) return [];
   const data = await resp.json().catch(()=>[]);
   return Array.isArray(data) ? data : [];
 }
 
-function __renderAddressSuggest(items){
+function __renderAddressSuggestfunction __renderAddressSuggest(items){
   const wrap = document.getElementById('addressSuggestWrap');
   const list = document.getElementById('addressSuggest');
   const err = document.getElementById('addressError');
@@ -1156,7 +1150,7 @@ async function geocodeBusinessAddress(submission){
     // Don't re-geocode if already present
     if (submission?.business?.geoLat && submission?.business?.geoLng) return submission;
 
-    const url = 'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
+    const url = '/api/address-geocode?' + new URLSearchParams({
       q: addr,
       format: 'json',
       limit: '5',
@@ -1166,20 +1160,9 @@ async function geocodeBusinessAddress(submission){
 
     const resp = await fetch(url, { headers: { 'Accept': 'application/json' }});
     if (!resp.ok) return submission;
-    const data = await resp.json().catch(()=> []);
-    const hits = Array.isArray(data) ? data : [];
-    const scoreHit = (h)=>{
-      const imp = typeof h.importance === 'number' ? h.importance : parseFloat(h.importance||'0') || 0;
-      const cls = String(h.class||'');
-      const typ = String(h.type||'');
-      let bonus = 0;
-      if (cls === 'building') bonus += 0.25;
-      if (cls === 'amenity' || cls === 'shop' || cls === 'office') bonus += 0.15;
-      if (typ.includes('house') || typ.includes('address')) bonus += 0.2;
-      const us = (h.address && String(h.address.country_code||'').toLowerCase()==='us') ? 0.2 : 0;
-      return imp + bonus + us;
-    };
-    const hit = hits.sort((a,b)=>scoreHit(b)-scoreHit(a))[0] || null;
+    const data = await resp.json().catch(()=> null);
+    // /api/address-geocode returns a single best hit (object) but we also tolerate arrays.
+    const hit = Array.isArray(data) ? (data[0] || null) : data;
     if (!hit || !hit.lat || !hit.lon) return submission;
 
     submission.business.geoLat = String(hit.lat);
