@@ -79,10 +79,6 @@ const els = {
   phone: $('phone'),
   email: $('email'),
   address: $('address'),
-  geoLat: $('geoLat'),
-  geoLng: $('geoLng'),
-  geoSource: $('geoSource'),
-  geoAccuracy: $('geoAccuracy'),
 
   canQty: $('canQty'),
   locations: $('locations'),
@@ -629,10 +625,6 @@ function buildSubmission(q){
       phone: els.phone.value.trim(),
       email: els.email.value.trim(),
       address: els.address.value.trim(),
-      geoLat: els.geoLat?.value || '',
-      geoLng: els.geoLng?.value || '',
-      geoSource: els.geoSource?.value || 'nominatim',
-      geoAccuracy: els.geoAccuracy?.value || '',
       locations: q.locations,
       preferredServiceDay: els.serviceDay.value || 'unspecified'
     },
@@ -678,36 +670,6 @@ function buildSubmission(q){
     notes: els.notes.value.trim()
   };
 }
-
-async function geocodeAddressIntoHiddenFields(){
-  try{
-    const addr = (els.address?.value || '').trim();
-    if (!addr) return;
-
-    // If already set and address hasn't changed, skip
-    const existingLat = (els.geoLat?.value || '').trim();
-    const existingLng = (els.geoLng?.value || '').trim();
-    if (existingLat && existingLng) return;
-
-    // OpenStreetMap Nominatim (no key). Good for low volume; respect rate limits.
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(addr)}`;
-    const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
-    });
-    if (!res.ok) return;
-    const data = await res.json().catch(()=>[]);
-    const hit = Array.isArray(data) ? data[0] : null;
-    if (!hit) return;
-
-    if (els.geoLat) els.geoLat.value = String(hit.lat || '');
-    if (els.geoLng) els.geoLng.value = String(hit.lon || '');
-    if (els.geoAccuracy) els.geoAccuracy.value = String(hit.type || hit.class || 'approx');
-    if (els.geoSource) els.geoSource.value = 'nominatim';
-  } catch(e){
-    // silent fail; we can still take the order without geo
-  }
-}
-
 
 function saveDraft(){
   if (!autosaveEnabled || suspendAutosave) return;
@@ -1040,7 +1002,6 @@ function renderReview(){
     els.payloadPre.textContent = '';
     return;
   }
-  await geocodeAddressIntoHiddenFields();
   const submission = buildSubmission(q);
 
   els.reviewBox.innerHTML = `
@@ -1166,9 +1127,6 @@ async function startCashOrder(submission){
 
 // ===== Events =====
 function bind(){
-  if (els.address){
-    els.address.addEventListener('blur', ()=>{ geocodeAddressIntoHiddenFields(); });
-  }
     document.querySelectorAll('[data-cadence]').forEach(btn => {
     btn.addEventListener('click', () => { setAutosaveEnabled(); setCadence(btn.dataset.cadence); });
   });
