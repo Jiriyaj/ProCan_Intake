@@ -1300,7 +1300,6 @@ function bind(){
     btn.addEventListener('click', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
   });
   // one-time toggle
-markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
   if (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
     setAutosaveEnabled();
     markStep2Confirmed();
