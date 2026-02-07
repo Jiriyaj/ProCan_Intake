@@ -236,6 +236,11 @@ function setupAddressAutocomplete(){
   });
 }
 
+// Back-compat: older builds called __setupAddressAutocomplete()
+function __setupAddressAutocomplete(){
+  return setupAddressAutocomplete();
+}
+
 
 // Cash/Check should only be available when "one-time clean only" is selected.
 function syncPaymentVisibility(opts={}){
@@ -1420,7 +1425,7 @@ function init(){
 
   bindMenu();
   bind();
-  setupAddressAutocomplete();
+  __setupAddressAutocomplete();
 
   if (els.discountCode){ applyDiscountCode(els.discountCode.value, { silent:true }); }
 
