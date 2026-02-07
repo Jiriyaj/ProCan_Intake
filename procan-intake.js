@@ -94,8 +94,7 @@ const els = {
   deepQty: $('deepQty'),
 
   notes: $('notes'),
-  startDate: $('startDate'),
-  oneTimeOnly: $('oneTimeOnly'),
+oneTimeOnly: $('oneTimeOnly'),
   depositToggle: $('depositToggle'),
   depositRow: $('depositRow'),
 
@@ -261,8 +260,7 @@ function syncPaymentVisibility(opts={}){
   // Remember deposit state
   uiState.deposit = !!(els.depositToggle && els.depositToggle.checked && !oneTime);
   const oneTimeNow = !!(els.oneTimeOnly && els.oneTimeOnly.checked);
-  const startISO = els.startDate ? String(els.startDate.value||'').trim() : '';
-  uiState.captureOnly = (!oneTimeNow && !uiState.deposit && isFutureStartDate(startISO));
+  uiState.captureOnly = false; // start date is chosen in the dashboard
   if (!opts.silent) updateConfirmGate();
 }
 
@@ -322,15 +320,6 @@ function isValidEmail(s){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
-function isFutureStartDate(startDateISO){
-  const s = String(startDateISO || '').trim();
-  if (!s) return false;
-  const d = new Date(s + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return false;
-  const today = new Date();
-  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return d.getTime() > t0.getTime();
-}
 
 
 
@@ -663,9 +652,7 @@ function validateStep1(){
 
 function validateStep2(){
   const errs = [];
-  const d = (els.startDate.value || '').trim();
-  if (!d) errs.push('Start date is required.');
-  const q = computeQuote();
+    const q = computeQuote();
   if (!q.ok) errs.push(q.error || 'Fix quote inputs.');
   return errs;
 }
@@ -704,7 +691,6 @@ function collectForm(){
     deepApplies: els.deepApplies.value,
     deepQty: els.deepQty.value,
     notes: els.notes.value,
-    startDate: els.startDate.value,
     oneTimeOnly: els.oneTimeOnly.checked,
     deposit: !!(els.depositToggle && els.depositToggle.checked),
     paymentMethod: els.paymentMethod ? els.paymentMethod.value : 'card',
@@ -747,7 +733,6 @@ function buildSubmission(q){
     billing: {
       option: q.billing,
       monthsInTerm: q.termMonths,
-      startDate: els.startDate.value || '',
       oneTimeOnly: !!els.oneTimeOnly.checked,
       captureOnly: !!uiState.captureOnly,
       deposit: !!q.isDeposit,
@@ -808,7 +793,6 @@ function loadDraft(){
     els.deepApplies.value = f.deepApplies || 'allCans';
     els.deepQty.value = f.deepQty ?? '0';
     els.notes.value = f.notes || '';
-    els.startDate.value = f.startDate || els.startDate.value || '';
     els.oneTimeOnly.checked = !!f.oneTimeOnly;
     if (els.depositToggle) els.depositToggle.checked = !!f.deposit;
 
@@ -1111,9 +1095,7 @@ function renderReview(){
       <div class="review-item"><b>Email:</b> ${escapeHtml(submission.business.email || '')}</div>
       <div class="review-item"><b>Phone:</b> ${escapeHtml(submission.business.phone || '')}</div>
       <div class="review-item"><b>Address:</b> ${escapeHtml(submission.business.address || '')}</div>
-      <div class="review-item"><b>Start Date:</b> ${escapeHtml(submission.billing.startDate || '')}</div>
-
-      <div class="review-item"><b>Trash Cadence:</b> ${escapeHtml(submission.services.trash.cadence)}</div>
+<div class="review-item"><b>Trash Cadence:</b> ${escapeHtml(submission.services.trash.cadence)}</div>
       <div class="review-item"><b># Cans:</b> ${submission.services.trash.cans}</div>
       <div class="review-item"><b>Pad Add-on:</b> ${submission.services.pad.enabled ? 'Yes' : 'No'}</div>
       <div class="review-item"><b>Deep Clean:</b> ${submission.services.deepClean.enabled ? 'Yes' : 'No'}</div>
@@ -1196,6 +1178,9 @@ async function startStripeCheckout(submission){
     }else{
       try{ document.getElementById('addressError').hidden = true; }catch(e){}
     }
+
+    // Save a local copy so we can render a confirmation page after Stripe redirects back
+    storeLastSubmission(submission);
 
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
@@ -1285,7 +1270,7 @@ function bind(){
     els.canQty, els.locations, els.serviceDay,
     els.padAddon, els.padSize, els.padCadence,
     els.deepClean, els.deepLevel, els.deepApplies, els.deepQty,
-    els.notes, els.startDate, els.oneTimeOnly, els.depositToggle
+    els.notes, els.oneTimeOnly, els.depositToggle
   ].forEach(el => {
     if (!el) return;
     el.addEventListener('input', () => {
@@ -1314,8 +1299,8 @@ function bind(){
   document.querySelectorAll('[data-bill]').forEach(btn => {
     btn.addEventListener('click', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
   });
-  // Start date + one-time toggle
-  if (els.startDate) els.startDate.addEventListener('change', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
+  // one-time toggle
+markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
   if (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
     setAutosaveEnabled();
     markStep2Confirmed();
@@ -1402,13 +1387,97 @@ els.next1.addEventListener('click', () => {
   }
 }
 
-function init(){
-  const today = new Date().toISOString().split('T')[0];
-  els.startDate.value = today;
 
+function storeLastSubmission(submission){
+  try{
+    const oid = submission?.meta?.id ? String(submission.meta.id) : '';
+    if (!oid) return;
+    localStorage.setItem('procan_last_oid', oid);
+    localStorage.setItem(`procan_last_submission_${oid}`, JSON.stringify(submission));
+  }catch(e){}
+}
+
+function loadLastSubmission(oid){
+  try{
+    const keyOid = oid || localStorage.getItem('procan_last_oid') || '';
+    if (!keyOid) return null;
+    const raw = localStorage.getItem(`procan_last_submission_${keyOid}`);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){
+    return null;
+  }
+}
+
+function showOrderComplete(oid){
+  const panel = document.getElementById('successPanel');
+  const box = document.getElementById('successSummary');
+  const btn = document.getElementById('startNewOrder');
+
+  const submission = loadLastSubmission(oid);
+  if (box){
+    if (submission){
+      const biz = submission.business || {};
+      const s = submission.services || {};
+      const p = submission.pricing || {};
+      const bill = submission.billing || {};
+      const lines = [
+        `<div class="review-item"><b>Order ID:</b> ${escapeHtml(String(submission?.meta?.id||oid||''))}</div>`,
+        `<div class="review-item"><b>Business:</b> ${escapeHtml(biz.name||'')}</div>`,
+        `<div class="review-item"><b>Address:</b> ${escapeHtml(biz.address||'')}</div>`,
+        `<div class="review-item"><b>Service:</b> ${escapeHtml((s.trash?.cadence||'') + '')} • ${escapeHtml(String(s.trash?.cans||''))} cans</div>`,
+        `<div class="review-item"><b>Billing:</b> ${escapeHtml(bill.option||'')}</div>`,
+        `<div class="review-item"><b>Paid Today:</b> ${money(p.dueToday||0)}</div>`
+      ];
+      box.innerHTML = lines.join('\n');
+    }else{
+      box.innerHTML = `<div class="review-item"><b>Order ID:</b> ${escapeHtml(String(oid||''))}</div>`;
+    }
+  }
+
+  // Lock UI into the completion state
+  setStep(4, { silent:true });
+
+  if (btn){
+    btn.onclick = () => {
+      try{
+        // reset URL params
+        const url = new URL(window.location.href);
+        url.searchParams.delete('paid');
+        url.searchParams.delete('oid');
+        url.searchParams.delete('canceled');
+        window.history.replaceState({}, '', url.toString());
+      }catch(e){}
+      // Reset app state
+      try{ localStorage.removeItem('procan_intake_autosave'); }catch(e){}
+      uiState.step2Confirmed = false;
+      uiState.hideSummary = true;
+      applySummaryVisibility();
+      setStep(1, { silent:true });
+      update({ silent:true });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+  }
+}
+
+function init(){
   bindMenu();
   bind();
   __setupAddressAutocomplete();
+
+  // Stripe redirect back
+  const params = new URLSearchParams(window.location.search);
+  const paid = params.get('paid');
+  const canceled = params.get('canceled');
+  const oid = params.get('oid');
+
+  if (paid === '1'){
+    showOrderComplete(oid);
+    return;
+  }
+  if (canceled === '1'){
+    // Stay on step 3 so the user can try again
+    setStep(3, { silent:true });
+  }
 
   if (els.discountCode){ applyDiscountCode(els.discountCode.value, { silent:true }); }
 

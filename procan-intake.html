@@ -235,12 +235,7 @@
               </div>
               <div class="hint">Auto-draft via card. ACH can be added after onboarding (if offered).</div>
             </div>
-
-            <div class="field">
-              <label>Start Date</label>
-              <input id="startDate" type="date" />
-              <div class="hint">Used for first service window + effective date.</div>
-            </div>
+</div>
           <div class="row two">
             <div class="field">
               <label>Discount Code</label>
@@ -341,7 +336,24 @@
 
  
         </div>
-      </section>
+      
+        <!-- STEP 4 (Order Complete) -->
+        <div class="step-panel" data-panel="4" id="successPanel">
+          <h2>Order Complete</h2>
+
+          <div class="success-box">
+            <div class="success-title">Payment processed ✅</div>
+            <div class="success-sub">We received your payment and secured your spot. You’ll get a confirmation email shortly.</div>
+
+            <div class="review-box" id="successSummary"></div>
+
+            <div class="nav">
+              <button class="btn" id="startNewOrder" type="button">Start New Order</button>
+            </div>
+          </div>
+        </div>
+
+</section>
 
       <!-- Right: sticky summary (toggleable only on step 1) -->
       <aside class="card summary-card" id="summaryCard">

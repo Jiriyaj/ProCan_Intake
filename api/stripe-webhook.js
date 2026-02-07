@@ -101,7 +101,6 @@ async function upsertSupabaseOrder({ session, m }) {
 
     locations_count: i(m.locationsCount || m.locations),
     preferred_service_day: safe(m.preferredServiceDay, 40) || null,
-    start_date: safe(m.startDate, 40) || null,
     notes: safe(m.notes, 1000) || null,
 
     billing_type: safe(m.billing_type, 40) || null,
@@ -209,7 +208,6 @@ async function upsertSupabaseCustomer({ session, m }){
     frequency: normalizeFrequencyFromCadence(m.cadence),
     cans: parseCansField(m.cans),
     preferred_window: safe(m.preferredServiceDay, 40) || null,
-    start_after: safe(m.startDate, 40) ? safe(m.startDate, 40) : null,
 
     status,
     deposit_amount: isDeposit ? Number(m.dueToday || 25) : 0,
@@ -308,7 +306,6 @@ function renderCustomerEmail({ m, session }) {
         <div>${amountLine}</div>
         <div>Service address: ${dash(m.address)}</div>
         <div>Preferred service day: ${dash(m.preferredServiceDay)}</div>
-        <div>Start date: ${dash(m.startDate)}</div>
         <div style="margin-top:8px;">${serviceLines.map(x => `<div>${x}</div>`).join('')}</div>
       </div>
 
@@ -335,8 +332,7 @@ function renderCustomerEmail({ m, session }) {
     amountLine,
     `Service address: ${dash(m.address)}`,
     `Preferred service day: ${dash(m.preferredServiceDay)}`,
-    `Start date: ${dash(m.startDate)}`,
-    ...serviceLines,
+        ...serviceLines,
     '',
     termsUrl ? `Terms & Conditions: ${termsUrl}` : '',
     '',
@@ -364,7 +360,6 @@ function renderOwnerEmail({ m, session }){
         <div><b>Address:</b> ${dash(m.address)}</div>
         <div><b>Locations:</b> ${dash(m.locations)}</div>
         <div><b>Preferred day:</b> ${dash(m.preferredServiceDay)}</div>
-        <div><b>Start date:</b> ${dash(m.startDate)}</div>
         <div style="margin-top:10px;"><b>Plan:</b> ${m.billing_type === 'one_time' ? 'One-time' : `Recurring (${dash(m.billing)})`}</div>
         <div><b>Paid today:</b> ${moneyFromCents(session.amount_total)}</div>
         <div style="margin-top:10px;"><b>Services</b></div>
@@ -387,8 +382,7 @@ function renderOwnerEmail({ m, session }){
     `Address: ${dash(m.address)}`,
     `Locations: ${dash(m.locations)}`,
     `Preferred day: ${dash(m.preferredServiceDay)}`,
-    `Start date: ${dash(m.startDate)}`,
-    '',
+        '',
     `Plan: ${m.billing_type === 'one_time' ? 'One-time' : `Recurring (${dash(m.billing)})`}`,
     `Paid today: ${moneyFromCents(session.amount_total)}`,
     '',
