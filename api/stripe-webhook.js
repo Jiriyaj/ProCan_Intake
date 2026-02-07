@@ -136,6 +136,10 @@ async function upsertSupabaseOrder({ session, m }) {
     deposit_amount: depositAmount,
     normal_due_today: normalDueToday,
     stripe_subscription_id: session.subscription || null,
+    lat: n(m.geoLat || m.lat),
+    lng: n(m.geoLng || m.lng),
+    geo_source: safe(m.geoSource, 40) || null,
+    geo_accuracy: safe(m.geoAccuracy, 60) || null,
   };
 
   async function doUpsert(payloadRow){
@@ -209,6 +213,10 @@ async function upsertSupabaseCustomer({ session, m }){
 
     stripe_customer_id: stripeCustomerId,
     stripe_subscription_id: session.subscription || null,
+    lat: n(m.geoLat || m.lat),
+    lng: n(m.geoLng || m.lng),
+    geo_source: safe(m.geoSource, 40) || null,
+    geo_accuracy: safe(m.geoAccuracy, 60) || null,
     pm_saved: (isDeposit || isSetup) ? true : false,
     created_at: new Date().toISOString()
   };
