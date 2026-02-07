@@ -159,7 +159,7 @@ async function __nominatimSuggest(q){
   return Array.isArray(data) ? data : [];
 }
 
-function __renderAddressSuggestfunction __renderAddressSuggest(items){
+function __renderAddressSuggest(items){
   const wrap = document.getElementById('addressSuggestWrap');
   const list = document.getElementById('addressSuggest');
   const err = document.getElementById('addressError');
