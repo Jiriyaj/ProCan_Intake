@@ -1042,6 +1042,37 @@ function getStripe(){
   return stripeClient;
 }
 
+
+async function geocodeBusinessAddress(submission){
+  try{
+    const addr = String(submission?.business?.address || '').trim();
+    if (!addr) return submission;
+    // Don't re-geocode if already present
+    if (submission?.business?.geoLat && submission?.business?.geoLng) return submission;
+
+    const url = 'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
+      q: addr,
+      format: 'json',
+      limit: '1',
+      addressdetails: '1'
+    }).toString();
+
+    const resp = await fetch(url, { headers: { 'Accept': 'application/json' }});
+    if (!resp.ok) return submission;
+    const data = await resp.json().catch(()=> []);
+    const hit = Array.isArray(data) ? data[0] : null;
+    if (!hit || !hit.lat || !hit.lon) return submission;
+
+    submission.business.geoLat = String(hit.lat);
+    submission.business.geoLng = String(hit.lon);
+    submission.business.geoSource = 'nominatim';
+    submission.business.geoAccuracy = hit.type || '';
+    return submission;
+  }catch(e){
+    return submission;
+  }
+}
+
 async function startStripeCheckout(submission){
   // Ensure latest payload is saved locally (so nothing is lost if checkout is closed)
   try{ localStorage.setItem(FINAL_KEY, JSON.stringify(submission)); }catch(e){}
@@ -1055,6 +1086,7 @@ async function startStripeCheckout(submission){
   }
 
   try{
+    submission = await geocodeBusinessAddress(submission);
     const res = await fetch('/api/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

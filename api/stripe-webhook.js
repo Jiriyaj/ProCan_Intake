@@ -96,6 +96,9 @@ async function upsertSupabaseOrder({ session, m }) {
     phone: safe(m.phone, 60) || null,
     address: safe(m.address, 300) || null,
 
+    lat: (m.geoLat != null && String(m.geoLat).trim() !== '') ? Number(m.geoLat) : null,
+    lng: (m.geoLng != null && String(m.geoLng).trim() !== '') ? Number(m.geoLng) : null,
+
     locations_count: i(m.locationsCount || m.locations),
     preferred_service_day: safe(m.preferredServiceDay, 40) || null,
     start_date: safe(m.startDate, 40) || null,
@@ -106,6 +109,8 @@ async function upsertSupabaseOrder({ session, m }) {
     term_months: i(m.term_months || m.termMonths),
 
     cadence: safe(m.cadence, 40) || null,
+    service_frequency: safe(m.cadence, 40) || null,
+    billing_interval: safe(m.billing, 40) || null,
     cans: safe(m.cans, 40) || null,
 
     pad_enabled: String(m.padEnabled || '').toLowerCase() === 'true',
@@ -135,7 +140,7 @@ async function upsertSupabaseOrder({ session, m }) {
     is_deposit: isDeposit,
     deposit_amount: depositAmount,
     normal_due_today: normalDueToday,
-    stripe_subscription_id: session.subscription || null,
+    stripe_subscription_id: session.subscription || m.createdSubscriptionId || null,
   };
 
   async function doUpsert(payloadRow){
@@ -197,6 +202,9 @@ async function upsertSupabaseCustomer({ session, m }){
     customer_email: safe(m.customerEmail || session.customer_details?.email || session.customer_email, 200) || null,
     phone: safe(m.phone, 60) || null,
     address: safe(m.address, 300) || null,
+
+    lat: (m.geoLat != null && String(m.geoLat).trim() !== '') ? Number(m.geoLat) : null,
+    lng: (m.geoLng != null && String(m.geoLng).trim() !== '') ? Number(m.geoLng) : null,
     zone: inferZone(m.address),
     frequency: normalizeFrequencyFromCadence(m.cadence),
     cans: parseCansField(m.cans),
@@ -208,7 +216,7 @@ async function upsertSupabaseCustomer({ session, m }){
     deposit_paid_at: isDeposit ? new Date().toISOString() : null,
 
     stripe_customer_id: stripeCustomerId,
-    stripe_subscription_id: session.subscription || null,
+    stripe_subscription_id: session.subscription || m.createdSubscriptionId || null,
     pm_saved: (isDeposit || isSetup) ? true : false,
     created_at: new Date().toISOString()
   };
@@ -424,6 +432,64 @@ module.exports = async (req, res) => {
         }
 
         const m = session.metadata || {};
+
+        // If this was a DEPOSIT checkout (mode=payment), create a subscription now but delay billing until the route start date.
+        // We create the subscription in trial and later the dashboard will update trial_end to the scheduled first service date.
+        try{
+          const isDeposit = String(m.isDeposit || '').toLowerCase() === 'true' || String(m.billing_type||'').toLowerCase() === 'deposit';
+          const hasCustomer = !!session.customer;
+          const alreadyHasSub = !!session.subscription;
+          if (isDeposit && hasCustomer && !alreadyHasSub){
+            const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+            // Determine the payment method from the PaymentIntent
+            let pmId = null;
+            if (session.payment_intent){
+              const pi = await stripe.paymentIntents.retrieve(session.payment_intent);
+              pmId = pi.payment_method || null;
+            }
+            if (pmId){
+              await stripe.customers.update(session.customer, {
+                invoice_settings: { default_payment_method: pmId }
+              });
+            }
+
+            const termMonths = parseInt(String(m.termMonths || m.term_months || 1), 10) || 1;
+            const monthlyTotal = Number(m.monthlyTotal || 0) || 0;
+            const amountCents = Math.round(Math.max(0, monthlyTotal * termMonths) * 100);
+
+            // Safety: if monthlyTotal isn't present, do not create a subscription.
+            if (amountCents > 0){
+              const now = Math.floor(Date.now()/1000);
+              const trialEnd = now + (365*24*60*60); // placeholder; will be updated when route is scheduled
+
+              const productName = `ProCan Service — ${String(m.bizName || '').trim() || 'ProCan Client'}`;
+
+              const sub = await stripe.subscriptions.create({
+                customer: session.customer,
+                collection_method: 'charge_automatically',
+                default_payment_method: pmId || undefined,
+                trial_end: trialEnd,
+                proration_behavior: 'none',
+                items: [{
+                  price_data: {
+                    currency: 'usd',
+                    product_data: { name: productName },
+                    unit_amount: amountCents,
+                    recurring: { interval: 'month', interval_count: termMonths },
+                  }
+                }],
+                metadata: m
+              });
+
+              // Stash for Supabase upsert
+              m.createdSubscriptionId = sub.id;
+              m.createdPaymentMethodId = pmId || '';
+            }
+          }
+        }catch(e){
+          console.error('❌ Deposit subscription create failed:', e?.message||e);
+        }
+
         const ownerEmail = process.env.OWNER_EMAIL;
 
         const customerEmail = safe(session.customer_details?.email || session.customer_email || m.customerEmail, 200);
