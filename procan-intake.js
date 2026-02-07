@@ -1420,7 +1420,7 @@ function init(){
 
   bindMenu();
   bind();
-  __setupAddressAutocomplete();
+  setupAddressAutocomplete();
 
   if (els.discountCode){ applyDiscountCode(els.discountCode.value, { silent:true }); }
 
