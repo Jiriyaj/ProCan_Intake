@@ -72,6 +72,36 @@ async function upsertSupabaseOrder({ session, m }) {
 
   const endpoint = `${supabaseUrl}/rest/v1/orders?on_conflict=stripe_session_id`;
 
+  // Prevent "zombie" orders: if an order was cancelled/archived in Supabase, do NOT resurrect it.
+  async function fetchExistingLifecycle(){
+    try{
+      const url = `${supabaseUrl}/rest/v1/orders?select=id,is_deleted,status&stripe_session_id=eq.${encodeURIComponent(session.id)}&limit=1`;
+      const r = await fetch(url, {
+        method:'GET',
+        headers:{
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          'Content-Type':'application/json'
+        }
+      });
+      if (!r.ok) return null;
+      const d = await r.json().catch(()=>[]);
+      const row = Array.isArray(d) ? d[0] : d;
+      return row || null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  const existing = await fetchExistingLifecycle();
+  if (existing){
+    const st = String(existing.status || '').toLowerCase();
+    if (existing.is_deleted === true || st.startsWith('cancelled')){
+      console.log('ℹ️ Not upserting: order is cancelled/archived in Supabase (prevents resurrection).', existing.id);
+      return existing;
+    }
+  }
+
   const i = (v) => {
     const n = parseInt(String(v ?? ''), 10);
     return Number.isFinite(n) ? n : null;
