@@ -159,7 +159,7 @@ async function __nominatimSuggest(q){
   return Array.isArray(data) ? data : [];
 }
 
-function __renderAddressSuggestfunction __renderAddressSuggest(items){
+function __renderAddressSuggest(items){
   const wrap = document.getElementById('addressSuggestWrap');
   const list = document.getElementById('addressSuggest');
   const err = document.getElementById('addressError');
@@ -1339,7 +1339,8 @@ function bind(){
   document.querySelectorAll('[data-bill]').forEach(btn => {
     btn.addEventListener('click', () => { setAutosaveEnabled(); markStep2Confirmed(); uiState.suppressAutoAdvance = false; scheduleAutoAdvance(); });
   });
-  // Start date + one-time toggleif (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
+  // One-time toggle
+  if (els.oneTimeOnly) els.oneTimeOnly.addEventListener('change', () => {
     setAutosaveEnabled();
     markStep2Confirmed();
     uiState.suppressAutoAdvance = false;
