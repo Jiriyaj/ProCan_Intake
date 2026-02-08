@@ -17,6 +17,17 @@ function json(res, status, obj){
   res.end(JSON.stringify(obj));
 }
 
+function setCors(req, res){
+  const origin = req.headers.origin || '';
+  const allowList = (process.env.CORS_ALLOW_ORIGINS || '').split(',').map(v=>v.trim()).filter(Boolean);
+  const allowOrigin = allowList.length ? (allowList.includes(origin) ? origin : '') : origin; // default: reflect origin
+  if (allowOrigin) res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
 function requireAuth(req){
   const h = req.headers.authorization || req.headers.Authorization || '';
   const token = String(h).startsWith('Bearer ') ? String(h).slice(7).trim() : '';
@@ -44,7 +55,9 @@ async function sbFetch(path, method, body){
 }
 
 module.exports = async (req, res) => {
-  try{
+  setCors(req, res);
+  if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
+try{
     if (req.method !== 'POST') return json(res, 405, { error:'Method Not Allowed' });
     if (!requireAuth(req)) return json(res, 401, { error:'Unauthorized' });
 
