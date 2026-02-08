@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     });
 
     if (!resp.ok) {
-      return res.status(resp.status).json(null);
+      return res.status(200).json(null);
     }
 
     const data = await resp.json().catch(() => []);

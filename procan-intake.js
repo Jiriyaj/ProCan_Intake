@@ -651,7 +651,6 @@ function validateStep1(){
 
 function validateStep2(){
   const errs = [];
-  if (!d) errs.push('Start date is required.');
   const q = computeQuote();
   if (!q.ok) errs.push(q.error || 'Fix quote inputs.');
   return errs;
