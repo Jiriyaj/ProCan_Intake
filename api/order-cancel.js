@@ -20,9 +20,8 @@ function json(res, status, obj){
 function setCors(req, res){
   const origin = req.headers.origin || '';
   const allowList = (process.env.CORS_ALLOW_ORIGINS || '').split(',').map(v=>v.trim()).filter(Boolean);
-  const allowOrigin = allowList.length ? (allowList.includes(origin) ? origin : '') : origin; // default: reflect origin
-  if (allowOrigin) res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Vary', 'Origin');
+    const allowOrigin = allowList.length ? (allowList.includes(origin) ? origin : '*') : '*'; // always respond for browser CORS
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin);  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
