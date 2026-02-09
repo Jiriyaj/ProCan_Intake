@@ -31,6 +31,7 @@ function safe(v, max = 500) {
   const s = String(v ?? '').trim();
   if (!s) return '';
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
 
 
 function getZipFromAddress(address){
@@ -538,20 +539,26 @@ module.exports = async (req, res) => {
 
               const productName = `ProCan Service — ${String(m.bizName || '').trim() || 'ProCan Client'}`;
 
+              // Subscriptions API does not accept `product_data` inside `price_data`.
+              // Create a Product + Price, then subscribe using the Price ID.
+              const product = await stripe.products.create({
+                name: productName,
+              });
+
+              const price = await stripe.prices.create({
+                currency: 'usd',
+                unit_amount: amountCents,
+                recurring: { interval: 'month', interval_count: termMonths },
+                product: product.id,
+              });
+
               const sub = await stripe.subscriptions.create({
                 customer: session.customer,
                 collection_method: 'charge_automatically',
                 default_payment_method: pmId || undefined,
                 trial_end: trialEnd,
                 proration_behavior: 'none',
-                items: [{
-                  price_data: {
-                    currency: 'usd',
-                    product_data: { name: productName },
-                    unit_amount: amountCents,
-                    recurring: { interval: 'month', interval_count: termMonths },
-                  }
-                }],
+                items: [{ price: price.id }],
                 metadata: m
               });
 
