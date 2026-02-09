@@ -5,6 +5,7 @@
 //   RESEND_API_KEY=re_...
 //   OWNER_EMAIL=your@email.com
 //   FROM_EMAIL="ProCan Sanitation <onboarding@resend.dev>"  // ok without your own domain
+//   TEST_EMAIL_TO=your@email.com   // optional: in Resend testing mode, force ALL emails to go to this address
 //
 // NEW (for Supabase persistence):
 //   SUPABASE_URL=https://xxxx.supabase.co
@@ -334,6 +335,17 @@ async function sendResendEmail({ to, subject, html, text, replyTo, idempotencyKe
   return res.json().catch(() => ({}));
 }
 
+async function safeSendResendEmail(args) {
+  try {
+    return await sendResendEmail(args);
+  } catch (e) {
+    // Never fail the Stripe webhook just because email delivery failed.
+    // Stripe will retry webhooks on non-2xx responses, which can cause duplicates downstream.
+    console.error('❌ Email send failed (continuing):', e?.message || e);
+    return null;
+  }
+}
+
 function renderCustomerEmail({ m, session }) {
   const termsUrl = m.termsUrl || '';
   const dash = (v) => (v ? v : '—');
@@ -552,12 +564,18 @@ module.exports = async (req, res) => {
           console.error('❌ Deposit subscription create failed:', e?.message||e);
         }
 
-        const ownerEmail = process.env.OWNER_EMAIL;
+        const ownerEmail = safe(process.env.OWNER_EMAIL, 200);
+        const testEmailTo = safe(process.env.TEST_EMAIL_TO, 200);
 
         const customerEmail = safe(session.customer_details?.email || session.customer_email || m.customerEmail, 200);
         if (!customerEmail){
           console.warn('⚠️ Missing customer email; cannot send customer receipt', { id: session.id });
         }
+
+        // In Resend "testing" mode, you can only send to your own email address.
+        // If TEST_EMAIL_TO is set, we force ALL emails to that address for seamless testing.
+        const customerTo = testEmailTo || customerEmail;
+        const ownerTo = testEmailTo || ownerEmail;
 
         console.log('✅ Checkout paid; processing', {
           id: session.id,
@@ -579,10 +597,10 @@ module.exports = async (req, res) => {
         }
 
         // Customer email FIRST
-        if (customerEmail){
+        if (customerTo){
           const c = renderCustomerEmail({ m, session });
-          await sendResendEmail({
-            to: customerEmail,
+          await safeSendResendEmail({
+            to: customerTo,
             subject: `ProCan — Order confirmed${m.orderId ? ` (#${m.orderId})` : ''}`,
             html: c.html,
             text: c.text,
@@ -592,10 +610,10 @@ module.exports = async (req, res) => {
         }
 
         // Owner email SECOND
-        if (ownerEmail){
+        if (ownerTo){
           const o = renderOwnerEmail({ m, session });
-          await sendResendEmail({
-            to: ownerEmail,
+          await safeSendResendEmail({
+            to: ownerTo,
             subject: `ProCan — New paid order${m.orderId ? ` (#${m.orderId})` : ''}`,
             html: o.html,
             text: o.text,
