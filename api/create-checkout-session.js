@@ -195,7 +195,10 @@ module.exports = async (req, res) => {
       // One-time payment checkout
       session = await stripe.checkout.sessions.create({
         mode: 'payment',
-        customer_creation: 'always', // ensure a Customer exists so deposit can be credited later
+        // IMPORTANT (Stripe constraint): you may specify ONLY ONE of {customer, customer_creation}.
+        // We pre-create a customer for deposits (so we can attach a balance credit in the webhook),
+        // therefore we only set customer_creation when we do NOT already have a customerId.
+        ...(customerId ? {} : { customer_creation: 'always' }),
         payment_method_types: ['card'],
         ...(customerId
           ? { customer: customerId }
