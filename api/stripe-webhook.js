@@ -113,37 +113,6 @@ async function upsertSupabaseOrder({ session, m }) {
 
   const isDeposit = String(m.isDeposit || '').toLowerCase() === 'true' || safe(m.billing_type, 40) === 'deposit';
 
-          // ✅ Deposit credit: convert the deposit payment into a customer credit so the first invoice is reduced.
-          // Stripe does NOT automatically treat a standalone deposit payment as a future credit.
-          // We use an idempotency key so webhook retries do not duplicate the credit.
-          if (isDeposit && session.customer){
-            const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-
-            // Prefer the actual charged amount from Checkout (cents). Fallback to metadata dollars.
-            const depositCents =
-              (typeof session.amount_total === 'number' && session.amount_total > 0)
-                ? session.amount_total
-                : Math.round((Number(m.dueToday || 0) || 0) * 100);
-
-            if (depositCents > 0){
-              try{
-                await stripe.customers.createBalanceTransaction(
-                  session.customer,
-                  {
-                    amount: -depositCents, // negative = credit
-                    currency: (session.currency || 'usd'),
-                    description: 'Deposit credited toward first invoice',
-                    metadata: { checkout_session_id: session.id }
-                  },
-                  { idempotencyKey: `deposit-credit-${session.id}` }
-                );
-              } catch (e){
-                // If a retry happens, idempotency will prevent dupes; log other issues.
-                console.error('❌ Failed to create deposit credit balance transaction:', e?.message || e);
-              }
-            }
-          }
-
   const depositAmount = isDeposit ? (n(m.dueToday) ?? (Number(session.amount_total || 0) / 100)) : null;
   const normalDueToday = isDeposit ? n(m.normalDueToday) : null;
 
@@ -506,6 +475,37 @@ module.exports = async (req, res) => {
         }
 
         const m = session.metadata || {};
+
+        // ✅ Deposit credit: convert the deposit payment into a customer credit so the first invoice is reduced.
+        // IMPORTANT: This must run regardless of whether Supabase persistence is enabled.
+        // Stripe does NOT automatically treat a standalone deposit payment as a future credit.
+        // We use an idempotency key so webhook retries do not duplicate the credit.
+        try {
+          const isDeposit = String(m.isDeposit || '').toLowerCase() === 'true' || String(m.billing_type || '').toLowerCase() === 'deposit';
+          if (isDeposit && session.customer) {
+            const depositCents =
+              (typeof session.amount_total === 'number' && session.amount_total > 0)
+                ? session.amount_total
+                : Math.round((Number(m.dueToday || 0) || 0) * 100);
+
+            if (depositCents > 0) {
+              await stripe.customers.createBalanceTransaction(
+                session.customer,
+                {
+                  amount: -depositCents, // negative = credit
+                  currency: (session.currency || 'usd'),
+                  description: 'Deposit credited toward first invoice',
+                  metadata: { checkout_session_id: session.id }
+                },
+                { idempotencyKey: `deposit-credit-${session.id}` }
+              );
+              console.log('✅ Deposit credit created', { session_id: session.id, customer: session.customer, depositCents });
+            }
+          }
+        } catch (e) {
+          // Never fail the webhook because of deposit credit; log and continue.
+          console.error('❌ Deposit credit failed:', e?.message || e);
+        }
 
         // If this was a DEPOSIT checkout (mode=payment), create a subscription now but delay billing until the route start date.
         // We create the subscription in trial and later the dashboard will update trial_end to the scheduled first service date.
