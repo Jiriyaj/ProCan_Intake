@@ -547,7 +547,7 @@ module.exports = async (req, res) => {
               const price = await stripe.prices.create({
                 currency: 'usd',
                 unit_amount: amountCents,
-                recurring: { interval: 'month', interval_count: termMonths },
+                recurring: { interval: 'month', interval_count: 1 },
                 product: product.id,
               });
 
@@ -557,6 +557,7 @@ module.exports = async (req, res) => {
                 default_payment_method: pmId || undefined,
                 trial_end: trialEnd,
                 proration_behavior: 'none',
+                cancel_at_period_end: false,
                 items: [{ price: price.id }],
                 metadata: m
               });
