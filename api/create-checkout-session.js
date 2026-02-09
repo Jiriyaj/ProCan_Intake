@@ -195,6 +195,7 @@ module.exports = async (req, res) => {
       // One-time payment checkout
       session = await stripe.checkout.sessions.create({
         mode: 'payment',
+        customer_creation: 'always', // ensure a Customer exists so deposit can be credited later
         payment_method_types: ['card'],
         ...(customerId
           ? { customer: customerId }
