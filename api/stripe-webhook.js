@@ -55,7 +55,6 @@ function parseCansField(cans){
   const n = parseInt(String(cans ?? ''), 10);
   return Number.isFinite(n) ? n : 0;
 }
-}
 
 /**
  * NEW: write paid orders into Supabase via REST
