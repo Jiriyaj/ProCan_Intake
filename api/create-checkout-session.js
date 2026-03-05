@@ -50,6 +50,7 @@ function buildSessionMetadata(submission, origin, computed){
     billing_type: computed.billing_type,
     billing: metaStr(computed.billing, 40),
     termMonths: metaStr(computed.termMonths, 10),
+    serviceType: metaStr(computed.serviceType, 40),
     cadence: metaStr(computed.cadence, 40),
     cans: metaStr(computed.cans, 40),
 
@@ -86,8 +87,15 @@ module.exports = async (req, res) => {
     const biz = safeStr(submission?.business?.name, 'ProCan Client');
     const email = safeStr(submission?.business?.email, '');
     const orderId = safeStr(submission?.meta?.id, '');
-    const cadence = safeStr(submission?.services?.trash?.cadence, 'biweekly');
+    // NOTE: "cadence" is used by the dashboard/ops scheduling.
+    // If the customer has ONLY pad washing (no cans), we treat pad cadence as the primary cadence.
+    const trashCadence = safeStr(submission?.services?.trash?.cadence, 'none');
     const cans = num(submission?.services?.trash?.cans, 0);
+    const hasTrash = (trashCadence !== 'none' && cans > 0);
+    const hasPad = !!submission?.services?.pad?.enabled;
+    const padCadence = safeStr(submission?.services?.pad?.cadence, '');
+
+    const cadence = hasTrash ? trashCadence : (hasPad ? (padCadence || 'biweekly') : trashCadence);
 
     const billing = safeStr(submission?.billing?.option, 'monthly'); // monthly | quarterly | annual
     const termMonths = num(submission?.billing?.monthsInTerm, 1);
@@ -112,6 +120,7 @@ module.exports = async (req, res) => {
     // Derive origin for redirects and terms link
     const origin = (req.headers && req.headers.origin) || `https://${req.headers.host}`;
 
+    const serviceType = hasTrash && hasPad ? 'cans+pads' : (hasPad ? 'pads' : 'cans');
     const serviceLabel = `ProCan Service — ${biz}`;
 
     const computed = {
@@ -119,7 +128,8 @@ module.exports = async (req, res) => {
       billing,
       termMonths,
       cadence,
-      cans
+      cans,
+      serviceType
     };
     const sessionMetadata = buildSessionMetadata(submission, origin, computed);
 
@@ -132,11 +142,16 @@ module.exports = async (req, res) => {
           currency: 'usd',
           product_data: {
             name: serviceLabel,
-            description: oneTimeOnly
-              ? `One-time service. Trash cadence: ${cadence}, cans: ${cans}`
-              : (isDeposit
-                  ? `Deposit reservation. Launch/start date: ${safeStr(submission?.billing?.startDate,'') || 'TBD'}. Trash cadence: ${cadence}, cans: ${cans}`
-                  : `Recurring service. Billing: ${billing} (${termMonths} mo). Trash cadence: ${cadence}, cans: ${cans}`),
+            description: (()=>{
+              const bits = [];
+              bits.push(`Service: ${serviceType}`);
+              if (hasTrash) bits.push(`Cans: ${cans} • ${trashCadence}`);
+              if (hasPad) bits.push(`Pads: ${safeStr(submission?.services?.pad?.size,'')} • ${padCadence || '—'}`);
+              const svc = bits.filter(Boolean).join(' | ');
+              if (oneTimeOnly) return `One-time service. ${svc}`;
+              if (isDeposit) return `Deposit reservation. Launch/start date: ${safeStr(submission?.billing?.startDate,'') || 'TBD'}. ${svc}`;
+              return `Recurring service. Billing: ${billing} (${termMonths} mo). ${svc}`;
+            })(),
           },
           unit_amount: dueTodayCents,
           ...(oneTimeOnly || isDeposit

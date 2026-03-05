@@ -641,7 +641,7 @@ function validateStep1(){
   const hasPad = !!els.padAddon.checked;
 
   if (!hasTrash && !hasPad){
-    errs.push('Select at least one service: Trash can cleaning (with # of cans) and/or Dumpster pad add-on.');
+    errs.push('Select at least one service: Trash can cleaning (with # of cans) and/or Dumpster pad washing.');
   }
   if (uiState.cadence !== 'none' && canQty <= 0 && !hasPad){
     errs.push('Enter the total number of cans (must be greater than 0).');
