@@ -2,8 +2,8 @@
 // Secure endpoint to:
 //  1) persist route schedule (service_start_date + cadence) in Supabase
 //  2) update Stripe subscriptions created from deposits:
-//     - apply the $25 deposit as a customer balance credit (reduces first invoice)
 //     - set subscription trial_end to the first service day (charges on service day)
+// Deposit credit is already applied in stripe-webhook.js when the deposit checkout succeeds.
 //
 // ENV required:
 //   STRIPE_SECRET_KEY=...
@@ -105,7 +105,6 @@ try{
 
     const orders = Array.isArray(ordersResp.data) ? ordersResp.data : [];
     let updatedSubs = 0;
-    let credited = 0;
     const errors = [];
 
     for (const o of orders){
@@ -113,19 +112,6 @@ try{
         const subId = o.stripe_subscription_id;
         const custId = o.stripe_customer_id;
         if (!subId || !custId) continue;
-
-        // Apply deposit credit once (idempotent)
-        const deposit = Number(o.deposit_amount || 25);
-        const depositCents = Math.round(deposit * 100);
-        if (depositCents > 0){
-          await stripe.customers.createBalanceTransaction(
-            custId,
-            { amount: -depositCents, currency: 'usd', description: `ProCan deposit credit for route ${routeId}` },
-            { idempotencyKey: `route_${routeId}_order_${o.id}_depositcredit` }
-          );
-          credited++;
-        }
-
         // Set trial_end to the service day so first invoice charges on service day
         await stripe.subscriptions.update(
           subId,
@@ -144,7 +130,6 @@ try{
       service_start_date: serviceStartDate,
       cadence,
       updated_subscriptions: updatedSubs,
-      deposit_credits_applied: credited,
       errors
     });
   }catch(e){
