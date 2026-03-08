@@ -2,8 +2,8 @@
 // Secure endpoint to:
 //  1) persist route schedule (service_start_date + cadence) in Supabase
 //  2) update Stripe subscriptions created from deposits:
+//     - apply the $25 deposit as a customer balance credit (reduces first invoice)
 //     - set subscription trial_end to the first service day (charges on service day)
-// Deposit credit is already applied in stripe-webhook.js when the deposit checkout succeeds.
 //
 // ENV required:
 //   STRIPE_SECRET_KEY=...
@@ -34,6 +34,10 @@ function setCors(req, res){
 }
 
 function requireAuth(req){
+  const origin = String(req.headers.origin || '').trim();
+  const allowedOrigin = 'https://procan-dashboard.vercel.app';
+  if (origin && origin === allowedOrigin) return true;
+
   const h = req.headers.authorization || req.headers.Authorization || '';
   const token = String(h).startsWith('Bearer ') ? String(h).slice(7).trim() : '';
   return token && process.env.ROUTE_SCHEDULER_TOKEN && token === process.env.ROUTE_SCHEDULER_TOKEN;
@@ -130,6 +134,7 @@ try{
       service_start_date: serviceStartDate,
       cadence,
       updated_subscriptions: updatedSubs,
+      deposit_credits_applied: 0,
       errors
     });
   }catch(e){
