@@ -64,6 +64,11 @@ function buildSessionMetadata(submission, origin, computed){
     deepCleanTotal: metaStr(num(s?.deepClean?.total, 0), 40),
 
     discountCode: metaStr(p.discountCode, 80),
+    discountTotal: metaStr(num(p.discountTotal, 0), 40),
+    baseMonthlyTotal: metaStr(num((p.monthlyTotal || 0) + (p.discountTotal || 0), 0), 40),
+    trashPricePerCanMonth: metaStr(num(s?.trash?.tierPricePerCanMonth, 0), 40),
+    trashMonthlyTotal: metaStr(num(s?.trash?.monthlyValue, 0), 40),
+    padMonthlyTotal: metaStr(num(s?.pad?.monthlyValue, 0), 40),
     monthlyTotal: metaStr(num(p.monthlyTotal, 0), 40),
     dueToday: metaStr(num(p.dueToday, 0), 40),
     normalDueToday: metaStr(num(p.normalDueToday, 0), 40),

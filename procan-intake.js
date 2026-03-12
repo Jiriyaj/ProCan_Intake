@@ -714,7 +714,7 @@ function buildSubmission(q){
       preferredServiceDay: els.serviceDay.value || 'unspecified'
     },
     services: {
-      trash: { cadence: q.cadence, cans: q.canQty, tierPricePerCanMonth: q.trashPerCan },
+      trash: { cadence: q.cadence, cans: q.canQty, tierPricePerCanMonth: q.trashPerCan, monthlyValue: q.trashMonthly },
       pad: {
         enabled: !!els.padAddon.checked,
         size: els.padSize.value || null,
