@@ -284,6 +284,9 @@ let attemptedNext1 = false;
 let attemptedNext2 = false;
 
 // ===== Formatting =====
+function roundMoney(n){
+  return +(Number(n || 0).toFixed(2));
+}
 function money(n){
   const v = Number(n || 0);
   return v.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -530,12 +533,12 @@ function computeQuote(){
     padVisitsPerMonth = Number(PRICING.dumpsterPad.visitsPerMonth[padCadence] || 1);
   }
 
-  const baseMonthly = trashMonthly + padMonthly;
-  const afterLocation = baseMonthly * (1 - locDisc);
-  const afterBilling = afterLocation * (1 - billDisc);
+  const baseMonthly = roundMoney(trashMonthly + padMonthly);
+  const afterLocation = roundMoney(baseMonthly * (1 - locDisc));
+  const afterBilling = roundMoney(afterLocation * (1 - billDisc));
 
   const codeDisc = Math.max(0, Math.min(0.90, Number(uiState.discountRate || 0)));
-  const monthlyTotal = afterBilling * (1 - codeDisc);
+  const monthlyTotal = roundMoney(afterBilling * (1 - codeDisc));
 
   if (billing === 'annual' && monthlyTotal < 1000){
     return { ok: false, error: 'Annual prepay requires $1,000+/month contract value.' };
@@ -555,9 +558,11 @@ function computeQuote(){
   }
 
   const termMonths = monthsInTerm(billing);
-  const trashPerVisit = (trashMonthly > 0 && trashVisitsPerMonth > 0) ? (trashMonthly / trashVisitsPerMonth) : 0;
-  const padPerVisit   = (padMonthly > 0 && padVisitsPerMonth > 0) ? (padMonthly / padVisitsPerMonth) : 0;
-  let perVisitTotal = (trashPerVisit + padPerVisit) * (1 - codeDisc);
+  const discountedTrashMonthly = roundMoney(trashMonthly * (1 - locDisc) * (1 - billDisc) * (1 - codeDisc));
+  const discountedPadMonthly = roundMoney(padMonthly * (1 - locDisc) * (1 - billDisc) * (1 - codeDisc));
+  const trashPerVisit = (discountedTrashMonthly > 0 && trashVisitsPerMonth > 0) ? roundMoney(discountedTrashMonthly / trashVisitsPerMonth) : 0;
+  const padPerVisit   = (discountedPadMonthly > 0 && padVisitsPerMonth > 0) ? roundMoney(discountedPadMonthly / padVisitsPerMonth) : 0;
+  let perVisitTotal = roundMoney(trashPerVisit + padPerVisit);
 
   // One-time service pricing rule:
   // - Trash cans: charge the FULL biweekly tier "per-can per month" price as a one-time per-can price.
@@ -580,11 +585,11 @@ function computeQuote(){
       padOneTime = Number(row?.[padCadence] || 0);
     }
 
-    perVisitTotal = (trashOneTime + padOneTime) * (1 - codeDisc);
-    normalDueToday = perVisitTotal + deepCleanTotal;
+    perVisitTotal = roundMoney((trashOneTime + padOneTime) * (1 - locDisc) * (1 - billDisc) * (1 - codeDisc));
+    normalDueToday = roundMoney(perVisitTotal + deepCleanTotal);
     dueToday = normalDueToday;
   } else {
-    normalDueToday = (monthlyTotal * termMonths) + deepCleanTotal;
+    normalDueToday = roundMoney((monthlyTotal * termMonths) + deepCleanTotal);
     dueToday = normalDueToday;
   }
 
@@ -599,7 +604,7 @@ function computeQuote(){
     dueToday = 0;
   }
 
-  const discountTotal = Math.max(0, baseMonthly - monthlyTotal);
+  const discountTotal = roundMoney(Math.max(0, baseMonthly - monthlyTotal));
 
   return {
     ok: true,
