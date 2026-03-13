@@ -60,6 +60,7 @@ const PRICING = {
 
 // ===== DOM helpers =====
 const $ = (id) => document.getElementById(id);
+const roundMoney = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 const els = {
   // menu
