@@ -34,13 +34,9 @@ function setCors(req, res){
 }
 
 function requireAuth(req){
-  const origin = String(req.headers.origin || '').trim();
-  const allowedOrigin = 'https://procan-dashboard.vercel.app';
-  if (origin && origin === allowedOrigin) return true;
-
   const h = req.headers.authorization || req.headers.Authorization || '';
   const token = String(h).startsWith('Bearer ') ? String(h).slice(7).trim() : '';
-  return token && process.env.ROUTE_SCHEDULER_TOKEN && token === process.env.ROUTE_SCHEDULER_TOKEN;
+  return !!(token && process.env.ROUTE_SCHEDULER_TOKEN && token === process.env.ROUTE_SCHEDULER_TOKEN);
 }
 
 function parseDateToChargeTimestamp(serviceStartDateISO){
@@ -79,6 +75,9 @@ module.exports = async (req, res) => {
 try{
     if (req.method !== 'POST') return json(res, 405, { error:'Method Not Allowed' });
     if (!requireAuth(req)) return json(res, 401, { error:'Unauthorized' });
+
+    if (!process.env.ROUTE_SCHEDULER_TOKEN) return json(res, 500, { error:'Missing ROUTE_SCHEDULER_TOKEN env' });
+    if (!process.env.STRIPE_SECRET_KEY) return json(res, 500, { error:'Missing STRIPE_SECRET_KEY env' });
 
     const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
     const body = req.body || {};
@@ -138,7 +137,7 @@ try{
       errors
     });
   }catch(e){
-    console.error('schedule-route error:', e);
+    console.error('schedule-route error:', { message: e?.message || String(e), stack: e?.stack || null });
     return json(res, 500, { error: e?.message || 'Server error' });
   }
 };

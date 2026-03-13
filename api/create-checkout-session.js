@@ -81,6 +81,10 @@ module.exports = async (req, res) => {
   try {
     if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({ error: 'Missing STRIPE_SECRET_KEY env.' });
+    }
+
     const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
     const { submission } = req.body || {};
 
