@@ -767,6 +767,8 @@ function buildSubmission(q){
       billingDiscountRate: q.billDisc,
       dueToday: q.dueToday,
       normalDueToday: q.normalDueToday,
+      padInitialFeeTotal: q.padInitialFeeTotal,
+      deepCleanTotal: q.deepCleanTotal,
       initialOneTimeTotal: q.initialOneTimeTotal,
       recurringChargeTotal: roundMoney(q.monthlyTotal * q.termMonths),
       firstServiceBalance: q.isDeposit ? roundMoney(Math.max(0, q.normalDueToday - 25)) : q.dueToday,

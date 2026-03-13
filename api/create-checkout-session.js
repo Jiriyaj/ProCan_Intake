@@ -67,6 +67,11 @@ function buildSessionMetadata(submission, origin, computed){
 
     discountCode: metaStr(p.discountCode, 80),
     monthlyTotal: metaStr(num(p.monthlyTotal, 0), 40),
+    baseMonthlyTotal: metaStr(num(p.baseMonthly, 0), 40),
+    discountTotal: metaStr(num(p.discountTotal, 0), 40),
+    trashPricePerCanMonth: metaStr(num(s?.trash?.tierPricePerCanMonth, 0), 40),
+    trashMonthlyTotal: metaStr(num(s?.trash?.tierPricePerCanMonth, 0) * num(s?.trash?.cans, 0), 40),
+    padMonthlyTotal: metaStr(num(s?.pad?.monthlyValue, 0), 40),
     dueToday: metaStr(num(p.dueToday, 0), 40),
     normalDueToday: metaStr(num(p.normalDueToday, 0), 40),
     initialOneTimeTotal: metaStr(num(p.initialOneTimeTotal, 0), 40),

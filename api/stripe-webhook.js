@@ -152,8 +152,15 @@ async function upsertSupabaseOrder({ session, m }) {
     deep_clean_level: safe(m.deepCleanLevel, 40) || null,
     deep_clean_qty: m.deepCleanQty != null ? String(m.deepCleanQty) : null,
     deep_clean_total: n(m.deepCleanTotal),
+    pad_initial_fee_total: n(m.padInitialFeeTotal),
+    initial_one_time_total: n(m.initialOneTimeTotal),
 
     discount_code: safe(m.discountCode, 60) || null,
+    discount_total: n(m.discountTotal),
+    base_monthly_total: n(m.baseMonthlyTotal || m.baseMonthly),
+    trash_price_per_can_month: n(m.trashPricePerCanMonth),
+    trash_monthly_total: n(m.trashMonthlyTotal),
+    pad_monthly_total: n(m.padMonthlyTotal),
     monthly_total: n(m.monthlyTotal),
     due_today: n(m.dueToday),
 

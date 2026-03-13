@@ -70,9 +70,16 @@ async function insertCashOrder({ submission, origin }) {
     deep_clean_enabled: !!s?.deepClean?.enabled,
     deep_clean_level: safe(s?.deepClean?.level, 40) || null,
     deep_clean_qty: s?.deepClean?.qty != null ? String(s.deepClean.qty) : null,
-    deep_clean_total: num(p.deepCleanTotal, 0) || null,
+    deep_clean_total: num(s?.deepClean?.total ?? p.deepCleanTotal, 0) || null,
+    pad_initial_fee_total: num(s?.pad?.initialFeeTotal ?? p.padInitialFeeTotal, 0) || 0,
+    initial_one_time_total: num(p.initialOneTimeTotal, 0) || 0,
 
     discount_code: safe(p.discountCode, 60) || null,
+    discount_total: num(p.discountTotal, 0) || 0,
+    base_monthly_total: num(p.baseMonthly, 0) || 0,
+    trash_price_per_can_month: num(s?.trash?.tierPricePerCanMonth, 0) || 0,
+    trash_monthly_total: num(s?.trash?.tierPricePerCanMonth, 0) * num(s?.trash?.cans, 0) || 0,
+    pad_monthly_total: num(s?.pad?.monthlyValue, 0) || 0,
     monthly_total: num(p.monthlyTotal, 0) || null,
     due_today: num(p.dueToday, 0) || null,
 
