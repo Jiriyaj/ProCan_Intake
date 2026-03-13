@@ -87,6 +87,8 @@ const els = {
   padAddon: $('padAddon'),
   padSize: $('padSize'),
   padCadence: $('padCadence'),
+  padInitialFeeEnabled: $('padInitialFeeEnabled'),
+  padInitialFeeAmount: $('padInitialFeeAmount'),
 
   deepClean: $('deepClean'),
   deepLevel: $('deepLevel'),
@@ -284,9 +286,6 @@ let attemptedNext1 = false;
 let attemptedNext2 = false;
 
 // ===== Formatting =====
-function roundMoney(n){
-  return +(Number(n || 0).toFixed(2));
-}
 function money(n){
   const v = Number(n || 0);
   return v.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -428,6 +427,8 @@ function silentResetToDefaults(){
   els.padAddon.checked = false;
   els.padSize.value = 'small';
   els.padCadence.value = 'weekly';
+  if (els.padInitialFeeEnabled) els.padInitialFeeEnabled.checked = false;
+  if (els.padInitialFeeAmount) els.padInitialFeeAmount.value = '0';
   els.deepClean.checked = false;
   els.deepLevel.value = 'standard';
   els.deepApplies.value = 'allCans';
@@ -533,12 +534,12 @@ function computeQuote(){
     padVisitsPerMonth = Number(PRICING.dumpsterPad.visitsPerMonth[padCadence] || 1);
   }
 
-  const baseMonthly = roundMoney(trashMonthly + padMonthly);
-  const afterLocation = roundMoney(baseMonthly * (1 - locDisc));
-  const afterBilling = roundMoney(afterLocation * (1 - billDisc));
+  const baseMonthly = trashMonthly + padMonthly;
+  const afterLocation = baseMonthly * (1 - locDisc);
+  const afterBilling = afterLocation * (1 - billDisc);
 
   const codeDisc = Math.max(0, Math.min(0.90, Number(uiState.discountRate || 0)));
-  const monthlyTotal = roundMoney(afterBilling * (1 - codeDisc));
+  const monthlyTotal = afterBilling * (1 - codeDisc);
 
   if (billing === 'annual' && monthlyTotal < 1000){
     return { ok: false, error: 'Annual prepay requires $1,000+/month contract value.' };
@@ -557,12 +558,17 @@ function computeQuote(){
     deepCleanTotal = perCan * qty;
   }
 
+  const padInitialFeeEnabled = !!(els.padAddon.checked && els.padInitialFeeEnabled && els.padInitialFeeEnabled.checked);
+  const padInitialFeeTotal = padInitialFeeEnabled
+    ? roundMoney(Math.max(0, Number(els.padInitialFeeAmount?.value || 0)))
+    : 0;
+
+  const initialOneTimeTotal = roundMoney(deepCleanTotal + padInitialFeeTotal);
+
   const termMonths = monthsInTerm(billing);
-  const discountedTrashMonthly = roundMoney(trashMonthly * (1 - locDisc) * (1 - billDisc) * (1 - codeDisc));
-  const discountedPadMonthly = roundMoney(padMonthly * (1 - locDisc) * (1 - billDisc) * (1 - codeDisc));
-  const trashPerVisit = (discountedTrashMonthly > 0 && trashVisitsPerMonth > 0) ? roundMoney(discountedTrashMonthly / trashVisitsPerMonth) : 0;
-  const padPerVisit   = (discountedPadMonthly > 0 && padVisitsPerMonth > 0) ? roundMoney(discountedPadMonthly / padVisitsPerMonth) : 0;
-  let perVisitTotal = roundMoney(trashPerVisit + padPerVisit);
+  const trashPerVisit = (trashMonthly > 0 && trashVisitsPerMonth > 0) ? roundMoney(trashMonthly / trashVisitsPerMonth) : 0;
+  const padPerVisit   = (padMonthly > 0 && padVisitsPerMonth > 0) ? roundMoney(padMonthly / padVisitsPerMonth) : 0;
+  let perVisitTotal = roundMoney((trashPerVisit + padPerVisit) * (1 - codeDisc));
 
   // One-time service pricing rule:
   // - Trash cans: charge the FULL biweekly tier "per-can per month" price as a one-time per-can price.
@@ -585,11 +591,11 @@ function computeQuote(){
       padOneTime = Number(row?.[padCadence] || 0);
     }
 
-    perVisitTotal = roundMoney((trashOneTime + padOneTime) * (1 - locDisc) * (1 - billDisc) * (1 - codeDisc));
-    normalDueToday = roundMoney(perVisitTotal + deepCleanTotal);
+    perVisitTotal = roundMoney((trashOneTime + padOneTime) * (1 - codeDisc));
+    normalDueToday = roundMoney(perVisitTotal + initialOneTimeTotal);
     dueToday = normalDueToday;
   } else {
-    normalDueToday = roundMoney((monthlyTotal * termMonths) + deepCleanTotal);
+    normalDueToday = roundMoney((monthlyTotal * termMonths) + initialOneTimeTotal);
     dueToday = normalDueToday;
   }
 
@@ -604,7 +610,7 @@ function computeQuote(){
     dueToday = 0;
   }
 
-  const discountTotal = roundMoney(Math.max(0, baseMonthly - monthlyTotal));
+  const discountTotal = Math.max(0, baseMonthly - monthlyTotal);
 
   return {
     ok: true,
@@ -618,6 +624,8 @@ function computeQuote(){
     baseMonthly, monthlyTotal,
     perVisitTotal,
     deepCleanTotal,
+    padInitialFeeTotal,
+    initialOneTimeTotal,
     dueToday,
     normalDueToday,
     isDeposit: deposit,
@@ -690,6 +698,8 @@ function collectForm(){
     padAddon: els.padAddon.checked,
     padSize: els.padSize.value,
     padCadence: els.padCadence.value,
+    padInitialFeeEnabled: !!(els.padInitialFeeEnabled && els.padInitialFeeEnabled.checked),
+    padInitialFeeAmount: els.padInitialFeeAmount ? els.padInitialFeeAmount.value : '0',
     deepClean: els.deepClean.checked,
     deepLevel: els.deepLevel.value,
     deepApplies: els.deepApplies.value,
@@ -719,12 +729,15 @@ function buildSubmission(q){
       preferredServiceDay: els.serviceDay.value || 'unspecified'
     },
     services: {
-      trash: { cadence: q.cadence, cans: q.canQty, tierPricePerCanMonth: q.trashPerCan, monthlyValue: q.trashMonthly },
+      trash: { cadence: q.cadence, cans: q.canQty, tierPricePerCanMonth: q.trashPerCan },
       pad: {
         enabled: !!els.padAddon.checked,
         size: els.padSize.value || null,
         cadence: els.padCadence.value || null,
-        monthlyValue: q.padMonthly
+        monthlyValue: q.padMonthly,
+        initialFeeEnabled: !!(els.padAddon.checked && els.padInitialFeeEnabled && els.padInitialFeeEnabled.checked),
+        initialFeeAmount: q.padInitialFeeTotal,
+        initialFeeTotal: q.padInitialFeeTotal
       },
       deepClean: {
         enabled: !!els.deepClean.checked,
@@ -753,6 +766,9 @@ function buildSubmission(q){
       billingDiscountRate: q.billDisc,
       dueToday: q.dueToday,
       normalDueToday: q.normalDueToday,
+      initialOneTimeTotal: q.initialOneTimeTotal,
+      recurringChargeTotal: roundMoney(q.monthlyTotal * q.termMonths),
+      firstServiceBalance: q.isDeposit ? roundMoney(Math.max(0, q.normalDueToday - 25)) : q.dueToday,
       isDeposit: !!q.isDeposit,
       depositAmount: q.isDeposit ? 25 : 0
     },
@@ -792,6 +808,8 @@ function loadDraft(){
     els.padAddon.checked = !!f.padAddon;
     els.padSize.value = f.padSize || 'small';
     els.padCadence.value = f.padCadence || 'weekly';
+    if (els.padInitialFeeEnabled) els.padInitialFeeEnabled.checked = !!f.padInitialFeeEnabled;
+    if (els.padInitialFeeAmount) els.padInitialFeeAmount.value = f.padInitialFeeAmount || '0';
     els.deepClean.checked = !!f.deepClean;
     els.deepLevel.value = f.deepLevel || 'standard';
     els.deepApplies.value = f.deepApplies || 'allCans';
@@ -851,6 +869,8 @@ function wipeDraft(){
   els.padAddon.checked = false;
   els.padSize.value = 'small';
   els.padCadence.value = 'weekly';
+  if (els.padInitialFeeEnabled) els.padInitialFeeEnabled.checked = false;
+  if (els.padInitialFeeAmount) els.padInitialFeeAmount.value = '0';
   els.deepClean.checked = false;
   els.deepLevel.value = 'standard';
   els.deepApplies.value = 'allCans';
@@ -977,7 +997,12 @@ function update(opts={}){
   const padOn = !!els.padAddon.checked;
   els.padSize.disabled = !padOn;
   els.padCadence.disabled = !padOn;
+  if (els.padInitialFeeEnabled) els.padInitialFeeEnabled.disabled = !padOn;
+  if (!padOn && els.padInitialFeeEnabled) els.padInitialFeeEnabled.checked = false;
+  const padInitialOn = !!(padOn && els.padInitialFeeEnabled && els.padInitialFeeEnabled.checked);
+  if (els.padInitialFeeAmount) els.padInitialFeeAmount.disabled = !padInitialOn;
   document.querySelectorAll('.pad-options').forEach(x => x.classList.toggle('enabled', padOn));
+  document.querySelectorAll('.pad-initial-options').forEach(x => x.classList.toggle('enabled', padInitialOn));
 
   const deepOn = !!els.deepClean.checked;
   els.deepLevel.disabled = !deepOn;
@@ -1030,6 +1055,10 @@ function update(opts={}){
       ? `Dumpster pad: <b>${money(q.padMonthly)}</b>/mo`
       : `Dumpster pad: <b>Not added</b>`;
 
+    const padInitialLine = (q.padInitialFeeTotal > 0)
+      ? `Initial pad fee (one-time): <b>${money(q.padInitialFeeTotal)}</b>`
+      : `Initial pad fee: <b>No</b>`;
+
     const deepLine = (q.deepCleanTotal > 0)
       ? `Deep clean (one-time): <b>${money(q.deepCleanTotal)}</b>`
       : `Deep clean: <b>No</b>`;
@@ -1043,13 +1072,16 @@ function update(opts={}){
       ? `Discount code: <b>${escapeHtml(q.discountCode)}</b> (${codePct}% off)`
       : '';
 
-      const deepSuffix = (q.deepCleanTotal > 0) ? ' + deep clean' : '';
+      const oneTimeLabels = [];
+      if (q.padInitialFeeTotal > 0) oneTimeLabels.push('initial pad fee');
+      if (q.deepCleanTotal > 0) oneTimeLabels.push('deep clean');
+      const oneTimeSuffix = oneTimeLabels.length ? ` + ${oneTimeLabels.join(' + ')}` : '';
 
       const dueRule = q.isDeposit
-        ? `Due today is a <b>$25 deposit</b> (reserves spot). Normal due at launch: <b>${money(q.normalDueToday)}</b>${deepSuffix}`
+        ? `Due today is a <b>$25 deposit</b> (reserves spot). First service invoice after deposit credit: <b>${money(Math.max(0, q.normalDueToday - 25))}</b>. Recurring after that: <b>${money(q.monthlyTotal * q.termMonths)}</b>${oneTimeSuffix ? ` (${oneTimeLabels.join(' + ')} hits once)` : ''}`
         : (els.oneTimeOnly.checked
-            ? `Due today is <b>one visit</b>${deepSuffix}`
-            : `Due today is <b>${q.termMonths} month(s)</b> prepay${deepSuffix}`);
+            ? `Due today is <b>one visit</b>${oneTimeSuffix}`
+            : `Due today is <b>${q.termMonths} month(s)</b> prepay${oneTimeSuffix}`);
       
     const breakdownHtml = `
       <div><b>Cadence:</b> ${cadenceLabel}</div>
@@ -1058,6 +1090,7 @@ function update(opts={}){
       <div class="line"></div>
       <div>${trashLine}</div>
       <div>${padLine}</div>
+      <div>${padInitialLine}</div>
       <div>${deepLine}</div>
       <div class="line"></div>
       <div>${discLine}</div>
@@ -1102,11 +1135,13 @@ function renderReview(){
       <div class="review-item"><b>Trash Cadence:</b> ${escapeHtml(submission.services.trash.cadence)}</div>
       <div class="review-item"><b># Cans:</b> ${submission.services.trash.cans}</div>
       <div class="review-item"><b>Pad Add-on:</b> ${submission.services.pad.enabled ? 'Yes' : 'No'}</div>
+      <div class="review-item"><b>Initial Pad Fee:</b> ${submission.services.pad.initialFeeEnabled ? money(submission.services.pad.initialFeeTotal || 0) : 'No'}</div>
       <div class="review-item"><b>Deep Clean:</b> ${submission.services.deepClean.enabled ? 'Yes' : 'No'}</div>
 
       <div class="review-item"><b>Monthly Total:</b> ${money(submission.pricing.monthlyTotal)}</div>
       <div class="review-item"><b>Due Today:</b> ${money(submission.pricing.dueToday)}${submission.pricing.isDeposit ? ' (deposit)' : (submission.billing.captureOnly ? ' (card saved; charged at start)' : '')}</div>
-      ${submission.pricing.isDeposit ? `<div class="review-item"><b>Normal Due at Launch:</b> ${money(submission.pricing.normalDueToday)}</div>` : ``}
+      <div class="review-item"><b>One-Time Initial Fees:</b> ${money(submission.pricing.initialOneTimeTotal || 0)}</div>
+      ${submission.pricing.isDeposit ? `<div class="review-item"><b>First Service Balance After Deposit:</b> ${money(submission.pricing.firstServiceBalance || 0)}</div>` : ``}
       <div class="review-item"><b>Discounts:</b> ${money(submission.pricing.discountTotal)}</div>
       <div class="review-item"><b>Per Visit:</b> ${money(submission.pricing.perVisitTotal)}</div>
     </div>
@@ -1312,7 +1347,7 @@ function bind(){
   [
     els.bizName, els.contactName, els.phone, els.email, els.address,
     els.canQty, els.locations, els.serviceDay,
-    els.padAddon, els.padSize, els.padCadence,
+    els.padAddon, els.padSize, els.padCadence, els.padInitialFeeEnabled, els.padInitialFeeAmount,
     els.deepClean, els.deepLevel, els.deepApplies, els.deepQty,
     els.notes, els.oneTimeOnly, els.depositToggle
   ].forEach(el => {

@@ -57,6 +57,8 @@ function buildSessionMetadata(submission, origin, computed){
     padEnabled: metaStr(!!s?.pad?.enabled, 10),
     padSize: metaStr(s?.pad?.size, 40),
     padCadence: metaStr(s?.pad?.cadence, 40),
+    padInitialFeeEnabled: metaStr(!!s?.pad?.initialFeeEnabled, 10),
+    padInitialFeeTotal: metaStr(num(s?.pad?.initialFeeTotal, 0), 40),
 
     deepCleanEnabled: metaStr(!!s?.deepClean?.enabled, 10),
     deepCleanLevel: metaStr(s?.deepClean?.level, 40),
@@ -64,14 +66,11 @@ function buildSessionMetadata(submission, origin, computed){
     deepCleanTotal: metaStr(num(s?.deepClean?.total, 0), 40),
 
     discountCode: metaStr(p.discountCode, 80),
-    discountTotal: metaStr(num(p.discountTotal, 0), 40),
-    baseMonthlyTotal: metaStr(num((p.monthlyTotal || 0) + (p.discountTotal || 0), 0), 40),
-    trashPricePerCanMonth: metaStr(num(s?.trash?.tierPricePerCanMonth, 0), 40),
-    trashMonthlyTotal: metaStr(num(s?.trash?.monthlyValue, 0), 40),
-    padMonthlyTotal: metaStr(num(s?.pad?.monthlyValue, 0), 40),
     monthlyTotal: metaStr(num(p.monthlyTotal, 0), 40),
     dueToday: metaStr(num(p.dueToday, 0), 40),
     normalDueToday: metaStr(num(p.normalDueToday, 0), 40),
+    initialOneTimeTotal: metaStr(num(p.initialOneTimeTotal, 0), 40),
+    recurringChargeTotal: metaStr(num(p.recurringChargeTotal, 0), 40),
     isDeposit: metaStr(!!(computed?.billing_type === 'deposit'), 10),
 
     termsUrl
@@ -107,6 +106,8 @@ module.exports = async (req, res) => {
 
     const monthlyTotal = num(submission?.pricing?.monthlyTotal, 0);
     const dueToday = num(submission?.pricing?.dueToday, 0);
+    const initialOneTimeTotal = num(submission?.pricing?.initialOneTimeTotal, 0);
+    const recurringChargeTotal = num(submission?.pricing?.recurringChargeTotal, monthlyTotal * termMonths);
 
     const oneTimeOnly = !!submission?.billing?.oneTimeOnly;
     const captureOnly = !!submission?.billing?.captureOnly;
@@ -141,36 +142,59 @@ module.exports = async (req, res) => {
     // Stripe expects integer cents
     const dueTodayCents = Math.round(dueToday * 100);
 
-    const lineItems = [
-      {
+    const serviceDescription = (()=>{
+      const bits = [];
+      bits.push(`Service: ${serviceType}`);
+      if (hasTrash) bits.push(`Cans: ${cans} • ${trashCadence}`);
+      if (hasPad) bits.push(`Pads: ${safeStr(submission?.services?.pad?.size,'')} • ${padCadence || '—'}`);
+      return bits.filter(Boolean).join(' | ');
+    })();
+
+    const lineItems = [];
+    if (oneTimeOnly || isDeposit) {
+      lineItems.push({
         price_data: {
           currency: 'usd',
           product_data: {
             name: serviceLabel,
-            description: (()=>{
-              const bits = [];
-              bits.push(`Service: ${serviceType}`);
-              if (hasTrash) bits.push(`Cans: ${cans} • ${trashCadence}`);
-              if (hasPad) bits.push(`Pads: ${safeStr(submission?.services?.pad?.size,'')} • ${padCadence || '—'}`);
-              const svc = bits.filter(Boolean).join(' | ');
-              if (oneTimeOnly) return `One-time service. ${svc}`;
-              if (isDeposit) return `Deposit reservation. Launch/start date: ${safeStr(submission?.billing?.startDate,'') || 'TBD'}. ${svc}`;
-              return `Recurring service. Billing: ${billing} (${termMonths} mo). ${svc}`;
-            })(),
+            description: oneTimeOnly
+              ? `One-time service. ${serviceDescription}`
+              : `Deposit reservation. Launch/start date: ${safeStr(submission?.billing?.startDate,'') || 'TBD'}. ${serviceDescription}`,
           },
           unit_amount: dueTodayCents,
-          ...(oneTimeOnly || isDeposit
-            ? {}
-            : {
-                recurring: {
-                  interval: 'month',
-                  interval_count: termMonths,
-                },
-              }),
         },
         quantity: 1,
-      },
-    ];
+      });
+    } else {
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: serviceLabel,
+            description: `Recurring service. Billing: ${billing} (${termMonths} mo). ${serviceDescription}`,
+          },
+          unit_amount: Math.round(Math.max(0, recurringChargeTotal) * 100),
+          recurring: {
+            interval: 'month',
+            interval_count: termMonths,
+          },
+        },
+        quantity: 1,
+      });
+      if (initialOneTimeTotal > 0) {
+        lineItems.push({
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Initial service add-on',
+              description: 'One-time initial service fees charged on the first invoice only.',
+            },
+            unit_amount: Math.round(initialOneTimeTotal * 100),
+          },
+          quantity: 1,
+        });
+      }
+    }
 
     // Success/cancel redirect (your intake form can read these params if you want)
     const successUrl = `${origin}/procan-intake.html?paid=1&oid=${encodeURIComponent(orderId)}`;

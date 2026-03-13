@@ -154,11 +154,6 @@ async function upsertSupabaseOrder({ session, m }) {
     deep_clean_total: n(m.deepCleanTotal),
 
     discount_code: safe(m.discountCode, 60) || null,
-    discount_total: n(m.discountTotal),
-    base_monthly_total: n(m.baseMonthlyTotal),
-    trash_price_per_can_month: n(m.trashPricePerCanMonth),
-    trash_monthly_total: n(m.trashMonthlyTotal),
-    pad_monthly_total: n(m.padMonthlyTotal),
     monthly_total: n(m.monthlyTotal),
     due_today: n(m.dueToday),
 
@@ -333,6 +328,7 @@ function renderCustomerEmail({ m, session }) {
   const serviceLines = [
     `Trash cadence: ${dash(m.cadence)} • Cans: ${dash(m.cans)}`,
     `Dumpster pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
+    `Initial pad fee: ${m.padInitialFeeEnabled === 'true' ? dash(m.padInitialFeeTotal) : 'No'}`,
     `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)})` : 'No'}`,
   ];
 
@@ -418,6 +414,7 @@ function renderOwnerEmail({ m, session }){
         <div style="margin-top:10px;"><b>Services</b></div>
         <div>Trash: ${dash(m.cadence)} • ${dash(m.cans)} cans</div>
         <div>Pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}</div>
+        <div>Initial pad fee: ${m.padInitialFeeEnabled === 'true' ? dash(m.padInitialFeeTotal) : 'No'}</div>
         <div>Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}</div>
         <div style="margin-top:10px;"><b>Notes:</b> ${dash(m.notes)}</div>
       </div>
@@ -442,6 +439,7 @@ function renderOwnerEmail({ m, session }){
     '',
     `Trash: ${dash(m.cadence)} • ${dash(m.cans)} cans`,
     `Pad: ${m.padEnabled === 'true' ? `Yes (${dash(m.padSize)} • ${dash(m.padCadence)})` : 'No'}`,
+    `Initial pad fee: ${m.padInitialFeeEnabled === 'true' ? dash(m.padInitialFeeTotal) : 'No'}`,
     `Deep clean: ${m.deepCleanEnabled === 'true' ? `Yes (${dash(m.deepCleanLevel)} • qty ${dash(m.deepCleanQty)} • total ${dash(m.deepCleanTotal)})` : 'No'}`,
     '',
     `Notes: ${dash(m.notes)}`
@@ -534,6 +532,7 @@ module.exports = async (req, res) => {
 
             const termMonths = parseInt(String(m.termMonths || m.term_months || 1), 10) || 1;
             const monthlyTotal = Number(m.monthlyTotal || 0) || 0;
+            const initialOneTimeTotal = Number(m.initialOneTimeTotal || 0) || 0;
             const amountCents = Math.round(Math.max(0, monthlyTotal * termMonths) * 100);
 
             // Safety: if monthlyTotal isn't present, do not create a subscription.
@@ -552,7 +551,7 @@ module.exports = async (req, res) => {
               const price = await stripe.prices.create({
                 currency: 'usd',
                 unit_amount: amountCents,
-                recurring: { interval: 'month', interval_count: 1 },
+                recurring: { interval: 'month', interval_count: termMonths },
                 product: product.id,
               });
 
@@ -566,6 +565,16 @@ module.exports = async (req, res) => {
                 items: [{ price: price.id }],
                 metadata: m
               });
+
+              if (initialOneTimeTotal > 0) {
+                await stripe.invoiceItems.create({
+                  customer: session.customer,
+                  subscription: sub.id,
+                  currency: 'usd',
+                  amount: Math.round(initialOneTimeTotal * 100),
+                  description: 'Initial service add-on (one-time)'
+                });
+              }
 
               // Stash for Supabase upsert
               m.createdSubscriptionId = sub.id;

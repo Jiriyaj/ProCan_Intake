@@ -137,8 +137,21 @@
 </div>
 <div class="addon">
 <label class="check check-top">
+<input id="padInitialFeeEnabled" type="checkbox"/>
+<span>One-time Initial Pad Restoration Fee</span>
+</label>
+<div class="row one pad-initial-options">
+<div class="field">
+<label>Initial Pad Fee Amount</label>
+<input disabled="" id="padInitialFeeAmount" min="0" step="1" type="number" value="0"/>
+<div class="hint">Optional one-time add-on for heavier first pad washes. Charged on the first invoice only.</div>
+</div>
+</div>
+</div>
+<div class="addon">
+<label class="check check-top">
 <input id="deepClean" type="checkbox"/>
-<span>One-time Initial Deep Clean (RECOMMENDED)</span>
+<span>One-time Initial Deep Clean for Cans (RECOMMENDED)</span>
 </label>
 <div class="row two deep-options">
 <div class="field">
@@ -239,7 +252,7 @@
 <input id="depositToggle" type="checkbox"/>
 <span>Take a $25 deposit today to reserve a route spot (start later)</span>
 </label>
-<div class="hint">Keeps the full quote the same, but sets <b>Due Today</b> to <b>$25</b>. (Remaining balance is collected at launch.)</div>
+<div class="hint">Keeps the full quote the same, but sets <b>Due Today</b> to <b>$25</b>. Any one-time initial fees are held for the first service invoice and do not stay on the subscription.</div>
 </div>
 </div>
 <div class="nav two">
