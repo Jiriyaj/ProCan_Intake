@@ -18,7 +18,7 @@ const DISCOUNT_CODES = {
 const FINAL_KEY = 'procan_latest_submission_v1';
 
 
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_51Std9ALhPorZTwtRmdJ8pSzwz1YqwnJVaAwYtiI8fy0AoXeIhLHRwu8t9T4I6sjoO2YrR4FhbAwPyr4rIksW25aN00LiPkQpwy';
+const STRIPE_PUBLISHABLE_KEY = 'pk_live_51Std8uLh7r7TuXLrcYtvhFt4pIdJnMDHMFtn0Fa0fFQVkc01yKYgQvL4hCRrX63mDwtON2zZc0FpplQjwAWVxN1k00yGHCFAae';
 // ===== Pricing (from your menu) =====
 const PRICING = {
   trashCan: {
