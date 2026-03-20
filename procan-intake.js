@@ -16,7 +16,7 @@ const DISCOUNT_CODES = {
 };
 
 const FINAL_KEY = 'procan_latest_submission_v1';
-
+const ADMIN_PIN = '1515';
 
 const STRIPE_PUBLISHABLE_KEY = 'pk_live_51Std8uLh7r7TuXLrcYtvhFt4pIdJnMDHMFtn0Fa0fFQVkc01yKYgQvL4hCRrX63mDwtON2zZc0FpplQjwAWVxN1k00yGHCFAae';
 // ===== Pricing (from your menu) =====
@@ -110,6 +110,14 @@ const els = {
   // transition
   transitionOverlay: $('transitionOverlay'),
   bootSub: $('bootSub'),
+
+  // admin pricing override
+  btnManagePricing: $('btnManagePricing'),
+  managePricingStatus: $('managePricingStatus'),
+  adminPricingPanel: $('adminPricingPanel'),
+  overridePadMonthly: $('overridePadMonthly'),
+  overridePadInitial: $('overridePadInitial'),
+  clearPricingOverrides: $('clearPricingOverrides'),
 
   // summary (right)
   badge: $('summaryBadge'),
@@ -277,7 +285,8 @@ let uiState = {
   captureOnly: false,
   hideSummary: true,
   step2Confirmed: false,
-  suppressAutoAdvance: true
+  suppressAutoAdvance: true,
+  adminUnlocked: false
 };
 
 let autosaveEnabled = false;
@@ -314,6 +323,42 @@ function cryptoId(){
     return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
   }
 }
+
+function parseOptionalMoney(value){
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return roundMoney(n);
+}
+
+function hasPadMonthlyOverride(){
+  return parseOptionalMoney(els.overridePadMonthly?.value) !== null;
+}
+
+function hasPadInitialOverride(){
+  return parseOptionalMoney(els.overridePadInitial?.value) !== null;
+}
+
+function hasPricingOverride(){
+  return hasPadMonthlyOverride() || hasPadInitialOverride();
+}
+
+function setAdminPricingUnlocked(unlocked){
+  uiState.adminUnlocked = !!unlocked;
+  if (els.adminPricingPanel) els.adminPricingPanel.hidden = !uiState.adminUnlocked;
+  if (els.managePricingStatus){
+    let label = uiState.adminUnlocked ? 'Unlocked' : 'Locked';
+    if (hasPricingOverride()) label += ' • Override Active';
+    els.managePricingStatus.textContent = label;
+  }
+}
+
+function clearPricingOverrides(){
+  if (els.overridePadMonthly) els.overridePadMonthly.value = '';
+  if (els.overridePadInitial) els.overridePadInitial.value = '';
+}
+
 function normalizePhone(s){
   return String(s || '').replace(/[^\d]/g, '');
 }
@@ -439,6 +484,8 @@ function silentResetToDefaults(){
   if (els.depositToggle) els.depositToggle.checked = false;
   if (els.discountCode) els.discountCode.value = '';
   if (els.discountApplied) els.discountApplied.textContent = '';
+  clearPricingOverrides();
+  setAdminPricingUnlocked(false);
 
   uiState.cadence = 'biweekly';
   uiState.billing = 'monthly';
@@ -527,12 +574,19 @@ function computeQuote(){
 
   let padMonthly = 0;
   let padVisitsPerMonth = 0;
+  let standardPadMonthly = 0;
   if (els.padAddon.checked){
     const sizeKey = els.padSize.value || 'small';
     const padCadence = els.padCadence.value || 'biweekly';
     const row = PRICING.dumpsterPad[sizeKey];
-    padMonthly = Number(row?.[padCadence] || 0);
+    standardPadMonthly = Number(row?.[padCadence] || 0);
+    padMonthly = standardPadMonthly;
     padVisitsPerMonth = Number(PRICING.dumpsterPad.visitsPerMonth[padCadence] || 1);
+  }
+
+  const overridePadMonthly = parseOptionalMoney(els.overridePadMonthly?.value);
+  if (els.padAddon.checked && overridePadMonthly !== null){
+    padMonthly = overridePadMonthly;
   }
 
   const baseMonthly = trashMonthly + padMonthly;
@@ -560,9 +614,13 @@ function computeQuote(){
   }
 
   const padInitialFeeEnabled = !!(els.padAddon.checked && els.padInitialFeeEnabled && els.padInitialFeeEnabled.checked);
-  const padInitialFeeTotal = padInitialFeeEnabled
+  const standardPadInitialFeeTotal = padInitialFeeEnabled
     ? roundMoney(Math.max(0, Number(els.padInitialFeeAmount?.value || 0)))
     : 0;
+  const overridePadInitial = parseOptionalMoney(els.overridePadInitial?.value);
+  const padInitialFeeTotal = (els.padAddon.checked && overridePadInitial !== null)
+    ? overridePadInitial
+    : standardPadInitialFeeTotal;
 
   const initialOneTimeTotal = roundMoney(deepCleanTotal + padInitialFeeTotal);
 
@@ -589,7 +647,7 @@ function computeQuote(){
       const sizeKey = els.padSize.value || 'small';
       const padCadence = els.padCadence.value || 'biweekly';
       const row = PRICING.dumpsterPad[sizeKey];
-      padOneTime = Number(row?.[padCadence] || 0);
+      padOneTime = (overridePadMonthly !== null) ? overridePadMonthly : Number(row?.[padCadence] || 0);
     }
 
     perVisitTotal = roundMoney((trashOneTime + padOneTime) * (1 - codeDisc));
@@ -619,21 +677,27 @@ function computeQuote(){
     codeDisc,
 
     cadence, canQty, trashPerCan, trashMonthly, trashVisitsPerMonth,
-    padMonthly, padVisitsPerMonth,
+    padMonthly, padVisitsPerMonth, standardPadMonthly,
     billing, termMonths,
     locations, locDisc, billDisc,
     baseMonthly, monthlyTotal,
     perVisitTotal,
     deepCleanTotal,
-    padInitialFeeTotal,
+    padInitialFeeTotal, standardPadInitialFeeTotal,
     initialOneTimeTotal,
     dueToday,
     normalDueToday,
     isDeposit: deposit,
     captureOnly: uiState.captureOnly,
-    discountTotal
+    discountTotal,
+    overrides: {
+      padMonthly: overridePadMonthly,
+      padInitialFee: overridePadInitial,
+      hasAny: (overridePadMonthly !== null) || (overridePadInitial !== null)
+    }
   };
 }
+
 
 // ===== Validation =====
 function validateStep1(){
@@ -709,7 +773,9 @@ function collectForm(){
     oneTimeOnly: els.oneTimeOnly.checked,
     deposit: !!(els.depositToggle && els.depositToggle.checked),
     paymentMethod: els.paymentMethod ? els.paymentMethod.value : 'card',
-    discountCode: els.discountCode ? els.discountCode.value : ''
+    discountCode: els.discountCode ? els.discountCode.value : '',
+    overridePadMonthly: els.overridePadMonthly ? els.overridePadMonthly.value : '',
+    overridePadInitial: els.overridePadInitial ? els.overridePadInitial.value : ''
   };
 }
 
@@ -736,9 +802,13 @@ function buildSubmission(q){
         size: els.padSize.value || null,
         cadence: els.padCadence.value || null,
         monthlyValue: q.padMonthly,
+        standardMonthlyValue: q.standardPadMonthly,
+        manualMonthlyOverride: q.overrides?.padMonthly ?? null,
         initialFeeEnabled: !!(els.padAddon.checked && els.padInitialFeeEnabled && els.padInitialFeeEnabled.checked),
         initialFeeAmount: q.padInitialFeeTotal,
-        initialFeeTotal: q.padInitialFeeTotal
+        initialFeeTotal: q.padInitialFeeTotal,
+        standardInitialFeeTotal: q.standardPadInitialFeeTotal,
+        manualInitialFeeOverride: q.overrides?.padInitialFee ?? null
       },
       deepClean: {
         enabled: !!els.deepClean.checked,
@@ -773,7 +843,12 @@ function buildSubmission(q){
       recurringChargeTotal: roundMoney(q.monthlyTotal * q.termMonths),
       firstServiceBalance: q.isDeposit ? roundMoney(Math.max(0, q.normalDueToday - 25)) : q.dueToday,
       isDeposit: !!q.isDeposit,
-      depositAmount: q.isDeposit ? 25 : 0
+      depositAmount: q.isDeposit ? 25 : 0,
+      manualOverrides: {
+        padMonthly: q.overrides?.padMonthly ?? null,
+        padInitialFee: q.overrides?.padInitialFee ?? null,
+        hasAny: !!q.overrides?.hasAny
+      }
     },
     notes: els.notes.value.trim()
   };
@@ -830,6 +905,9 @@ function loadDraft(){
       els.discountCode.value = f.discountCode || '';
       applyDiscountCode(els.discountCode.value, { silent:true });
     }
+    if (els.overridePadMonthly) els.overridePadMonthly.value = f.overridePadMonthly || '';
+    if (els.overridePadInitial) els.overridePadInitial.value = f.overridePadInitial || '';
+    setAdminPricingUnlocked(false);
 
     attemptedNext1 = false;
     attemptedNext2 = false;
@@ -882,6 +960,8 @@ function wipeDraft(){
   els.oneTimeOnly.checked = false;
   if (els.discountCode) els.discountCode.value = '';
   if (els.discountApplied) els.discountApplied.textContent = '';
+  clearPricingOverrides();
+  setAdminPricingUnlocked(false);
 
   uiState.cadence = 'biweekly';
   uiState.billing = 'monthly';
@@ -975,6 +1055,7 @@ function setPaymentMethod(p, opts={}){
   if (!opts.silent) updateConfirmGate();
 }
 function setStep(n, opts={}){
+  if (uiState.step === 2 && n !== 2) setAdminPricingUnlocked(false);
   uiState.step = n;
   uiState.suppressAutoAdvance = true;
   document.querySelectorAll('.step-panel').forEach(p => p.classList.toggle('active', Number(p.dataset.panel) === n));
@@ -998,6 +1079,9 @@ function setStep(n, opts={}){
 // ===== Render =====
 function update(opts={}){
   const padOn = !!els.padAddon.checked;
+  if (els.overridePadMonthly) els.overridePadMonthly.disabled = !uiState.adminUnlocked || !padOn;
+  if (els.overridePadInitial) els.overridePadInitial.disabled = !uiState.adminUnlocked || !padOn;
+  if (els.clearPricingOverrides) els.clearPricingOverrides.disabled = !uiState.adminUnlocked;
   els.padSize.disabled = !padOn;
   els.padCadence.disabled = !padOn;
   if (els.padInitialFeeEnabled) els.padInitialFeeEnabled.disabled = !padOn;
@@ -1074,6 +1158,9 @@ function update(opts={}){
     const codeLine = (q.discountCode && codePct)
       ? `Discount code: <b>${escapeHtml(q.discountCode)}</b> (${codePct}% off)`
       : '';
+    const overrideLine = q.overrides?.hasAny
+      ? `Manual override: <b>Yes</b>${q.overrides?.padMonthly !== null ? ` • pad monthly ${money(q.overrides.padMonthly)}` : ''}${q.overrides?.padInitialFee !== null ? ` • initial pad ${money(q.overrides.padInitialFee)}` : ''}`
+      : '';
 
       const oneTimeLabels = [];
       if (q.padInitialFeeTotal > 0) oneTimeLabels.push('initial pad fee');
@@ -1098,6 +1185,7 @@ function update(opts={}){
       <div class="line"></div>
       <div>${discLine}</div>
       ${codeLine ? `<div>${codeLine}</div>` : ``}
+      ${overrideLine ? `<div>${overrideLine}</div>` : ``}
       <div><b>Per-visit estimate:</b> ${money(q.perVisitTotal)}</div>
       <div style="margin-top:8px; opacity:.85;">${dueRule}</div>
     `;
@@ -1147,6 +1235,7 @@ function renderReview(){
       ${submission.pricing.isDeposit ? `<div class="review-item"><b>First Service Balance After Deposit:</b> ${money(submission.pricing.firstServiceBalance || 0)}</div>` : ``}
       <div class="review-item"><b>Discounts:</b> ${money(submission.pricing.discountTotal)}</div>
       <div class="review-item"><b>Per Visit:</b> ${money(submission.pricing.perVisitTotal)}</div>
+      ${submission.pricing.manualOverrides?.hasAny ? `<div class="review-item"><b>Manual Overrides:</b> Pad Monthly ${submission.pricing.manualOverrides.padMonthly !== null ? money(submission.pricing.manualOverrides.padMonthly) : '—'} | Initial Pad ${submission.pricing.manualOverrides.padInitialFee !== null ? money(submission.pricing.manualOverrides.padInitialFee) : '—'}</div>` : ``}
     </div>
   `;
   els.payloadPre.textContent = JSON.stringify(submission, null, 2);
@@ -1352,7 +1441,8 @@ function bind(){
     els.canQty, els.locations, els.serviceDay,
     els.padAddon, els.padSize, els.padCadence, els.padInitialFeeEnabled, els.padInitialFeeAmount,
     els.deepClean, els.deepLevel, els.deepApplies, els.deepQty,
-    els.notes, els.oneTimeOnly, els.depositToggle
+    els.notes, els.oneTimeOnly, els.depositToggle,
+    els.overridePadMonthly, els.overridePadInitial
   ].forEach(el => {
     if (!el) return;
     el.addEventListener('input', () => {
@@ -1398,6 +1488,36 @@ function bind(){
     update();
     scheduleAutoAdvance();
   });
+
+
+  if (els.btnManagePricing){
+    els.btnManagePricing.addEventListener('click', () => {
+      setAutosaveEnabled();
+      if (uiState.adminUnlocked){
+        setAdminPricingUnlocked(false);
+        saveDraft();
+        return;
+      }
+      const pin = window.prompt('Enter pricing PIN');
+      if (pin === null) return;
+      if (String(pin).trim() !== ADMIN_PIN){
+        alert('Incorrect PIN.');
+        return;
+      }
+      setAdminPricingUnlocked(true);
+      update();
+      saveDraft();
+    });
+  }
+
+  if (els.clearPricingOverrides){
+    els.clearPricingOverrides.addEventListener('click', () => {
+      setAutosaveEnabled();
+      clearPricingOverrides();
+      update();
+      saveDraft();
+    });
+  }
 
 // Discount code (optional)
   if (els.applyDiscount && els.discountCode){
@@ -1474,6 +1594,7 @@ function init(){
   __setupAddressAutocomplete();
 
   if (els.discountCode){ applyDiscountCode(els.discountCode.value, { silent:true }); }
+  setAdminPricingUnlocked(false);
 
   setCadence(uiState.cadence, { silent:true });
   setBilling(uiState.billing, { silent:true });
